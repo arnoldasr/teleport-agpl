@@ -169,7 +169,7 @@ func handleReexec() {
 	// is re-executed.
 	if addr := os.Getenv(tshBinMockHeadlessAddrEnv); addr != "" {
 		runOpts = append(runOpts, func(c *CLIConf) error {
-			c.MockHeadlessLogin = func(ctx context.Context, keyRing *client.KeyRing) (*authclient.SSHLoginResponse, error) {
+			c.MockHeadlessLogin = func(ctx context.Context, keyRing *client.KeyRing) (*authclient.CLILoginResponse, error) {
 				conn, err := net.Dial("tcp", addr)
 				if err != nil {
 					return nil, trace.Wrap(err, "dialing mock headless server")
@@ -203,7 +203,7 @@ func handleReexec() {
 				if err != nil {
 					return nil, trace.Wrap(err, "reading reply from mock headless server")
 				}
-				var loginResp authclient.SSHLoginResponse
+				var loginResp authclient.CLILoginResponse
 				if err := json.Unmarshal(reply, &loginResp); err != nil {
 					return nil, trace.Wrap(err, "decoding reply from mock headless server")
 				}
@@ -513,7 +513,7 @@ func TestFailedLogin(t *testing.T) {
 
 	// build a mock SSO login function to patch into tsh
 	loginFailed := trace.AccessDenied("login failed")
-	ssoLogin := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.SSHLoginResponse, error) {
+	ssoLogin := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.CLILoginResponse, error) {
 		return nil, loginFailed
 	}
 
@@ -2141,7 +2141,7 @@ func TestNoRelogin(t *testing.T) {
 	require.NoError(t, err)
 
 	reloginErr := errors.New("relogin failed")
-	trackingLoginFunc := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.SSHLoginResponse, error) {
+	trackingLoginFunc := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.CLILoginResponse, error) {
 		return nil, reloginErr
 	}
 
@@ -3059,7 +3059,7 @@ func TestKubeCredentialsLock(t *testing.T) {
 
 		var ssoCalls atomic.Int32
 		mockSSOLogin := mockSSOLogin(authServer, alice)
-		mockSSOLoginWithCountCalls := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.SSHLoginResponse, error) {
+		mockSSOLoginWithCountCalls := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.CLILoginResponse, error) {
 			ssoCalls.Add(1)
 			return mockSSOLogin(ctx, connectorID, keyRing, protocol)
 		}
@@ -4389,7 +4389,7 @@ func mockConnector(t *testing.T) types.OIDCConnector {
 }
 
 func mockSSOLogin(authServer *auth.Server, user types.User) client.SSOLoginFunc {
-	return func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.SSHLoginResponse, error) {
+	return func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.CLILoginResponse, error) {
 		// generate certificates for our user
 		clusterName, err := authServer.GetClusterName(ctx)
 		if err != nil {
@@ -4424,7 +4424,7 @@ func mockSSOLogin(authServer *auth.Server, user types.User) client.SSOLoginFunc 
 		}
 
 		// build login response
-		return &authclient.SSHLoginResponse{
+		return &authclient.CLILoginResponse{
 			Username:    user.GetName(),
 			Cert:        sshCert,
 			TLSCert:     tlsCert,
@@ -4434,7 +4434,7 @@ func mockSSOLogin(authServer *auth.Server, user types.User) client.SSOLoginFunc 
 }
 
 func mockHeadlessLogin(t *testing.T, authServer *auth.Server, user types.User) client.SSHLoginFunc {
-	return func(ctx context.Context, keyRing *client.KeyRing) (*authclient.SSHLoginResponse, error) {
+	return func(ctx context.Context, keyRing *client.KeyRing) (*authclient.CLILoginResponse, error) {
 		// generate certificates for our user
 		clusterName, err := authServer.GetClusterName(ctx)
 		require.NoError(t, err)
@@ -4459,7 +4459,7 @@ func mockHeadlessLogin(t *testing.T, authServer *auth.Server, user types.User) c
 		require.NoError(t, err)
 
 		// build login response
-		return &authclient.SSHLoginResponse{
+		return &authclient.CLILoginResponse{
 			Username:    user.GetName(),
 			Cert:        sshCert,
 			TLSCert:     tlsCert,

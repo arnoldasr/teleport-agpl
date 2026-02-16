@@ -413,7 +413,7 @@ func TestWithRsync(t *testing.T) {
 					}
 
 					// send login response to the client
-					resp := authclient.SSHLoginResponse{
+					resp := authclient.CLILoginResponse{
 						Username:    accessUser.GetName(),
 						Cert:        sshCert,
 						TLSCert:     tlsCert,

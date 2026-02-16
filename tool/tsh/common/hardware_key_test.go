@@ -98,7 +98,7 @@ func TestHardwareKeyLogin(t *testing.T) {
 	// mock SSO login and count the number of login attempts.
 	var lastLoginCount int
 	mockSSOLogin := mockSSOLogin(authServer, alice)
-	mockSSOLoginWithCountAndAttestation := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.SSHLoginResponse, error) {
+	mockSSOLoginWithCountAndAttestation := func(ctx context.Context, connectorID string, keyRing *client.KeyRing, protocol string) (*authclient.CLILoginResponse, error) {
 		lastLoginCount++
 
 		// Set MockAttestationData to attest the expected key policy and reset it after login.
