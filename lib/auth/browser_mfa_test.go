@@ -213,6 +213,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
+<<<<<<< HEAD
 				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge when webauthn not available")
 			},
 		},
@@ -240,6 +241,9 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 					},
 					Payload: &mfatypes.SessionIdentifyingPayload{},
 				}, sd)
+=======
+				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge")
+>>>>>>> ae2f5767b19 (Update tests to use new constant name)
 			},
 		},
 		{
