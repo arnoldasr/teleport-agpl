@@ -126,10 +126,27 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 	samlUser, samlRole, err := authtest.CreateUserAndRole(a, "saml-user", []string{"role"}, nil)
 	require.NoError(t, err)
 
+<<<<<<< HEAD
 	// Create a fake SAML user with SSO MFA enabled and a webauthn device, who will get Browser MFA
 	samlUserWithWebauthn, samlWebauthnRole, err := authtest.CreateUserAndRole(a, "saml-webauthn-user", []string{"role"}, nil)
 	require.NoError(t, err)
 	err = a.UpsertMFADevice(ctx, samlUserWithWebauthn.GetName(), env.webauthnDev)
+=======
+	// Add a WebAuthn device so this case verifies SSO MFA exclusion rather than
+	// the absence of registered MFA devices.
+	samlWebauthnDev, err := types.NewMFADevice("saml-webauthn-device", "saml-webauthn-device-id", env.clock.Now(), &types.MFADevice_Webauthn{
+		Webauthn: &types.WebauthnDevice{
+			CredentialId:     []byte("saml-credential-id"),
+			PublicKeyCbor:    []byte("saml-public-key"),
+			AttestationType:  "none",
+			Aaguid:           []byte("saml-aaguid"),
+			SignatureCounter: 0,
+			ResidentKey:      false,
+		},
+	})
+	require.NoError(t, err)
+	err = a.UpsertMFADevice(ctx, samlUser.GetName(), samlWebauthnDev)
+>>>>>>> e939535125b (feedback)
 	require.NoError(t, err)
 
 	samlConnector, err := types.NewSAMLConnector("saml", types.SAMLConnectorSpecV2{
@@ -147,6 +164,16 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = a.UpsertSAMLConnector(ctx, samlConnector)
+	require.NoError(t, err)
+
+	samlUser.SetCreatedBy(types.CreatedBy{
+		Time: env.clock.Now(),
+		Connector: &types.ConnectorRef{
+			ID:   samlConnector.GetName(),
+			Type: samlConnector.GetKind(),
+		},
+	})
+	_, err = a.UpsertUser(ctx, samlUser)
 	require.NoError(t, err)
 
 	loginExt := &mfav1.ChallengeExtensions{
@@ -213,7 +240,6 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
-<<<<<<< HEAD
 				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge when webauthn not available")
 			},
 		},
@@ -241,9 +267,6 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 					},
 					Payload: &mfatypes.SessionIdentifyingPayload{},
 				}, sd)
-=======
-				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge")
->>>>>>> ae2f5767b19 (Update tests to use new constant name)
 			},
 		},
 		{
