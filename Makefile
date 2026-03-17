@@ -2105,3 +2105,15 @@ ifndef BENCH_FILES
 	$(error "Please provide BENCH_FILES=<file1> <file2> ...")
 endif
 	@$(BENCHSTAT) $(BENCH_FILES) | tee test-logs/benchstat.txt
+
+.PHONY: require-pre-commit
+require-pre-commit:
+	@which pre-commit 1>/dev/null 2>&1 || (echo 'pre-commit is not installed. For installation instructions see https://pre-commit.com/#install'; exit 1)
+
+.PHONY: enable-pre-commit
+enable-pre-commit: require-pre-commit
+	pre-commit install
+
+.PHONY: disable-pre-commit
+disable-pre-commit: require-pre-commit
+	pre-commit uninstall

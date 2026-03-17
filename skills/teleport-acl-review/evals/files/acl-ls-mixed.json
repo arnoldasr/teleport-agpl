@@ -1,0 +1,54 @@
+[
+    {
+        "kind": "access_list",
+        "version": "v1",
+        "metadata": {
+            "name": "59182055-74f2-4a71-8163-bcb1cc5a882f",
+            "expires": "0001-01-01T00:00:00Z",
+            "revision": "143453c7-54b1-4339-aa43-ef31c626ce47"
+        },
+        "spec": {
+            "title": "Low Risk Apps Access",
+            "description": "Access to low risk applications",
+            "owners": [
+                {"name": "alice", "ineligible_status": "INELIGIBLE_STATUS_ELIGIBLE", "membership_kind": "MEMBERSHIP_KIND_USER"},
+                {"name": "bob", "ineligible_status": "INELIGIBLE_STATUS_ELIGIBLE", "membership_kind": "MEMBERSHIP_KIND_USER"}
+            ],
+            "audit": {
+                "next_audit_date": "2026-03-20T07:00:00Z",
+                "recurrence": {"frequency": "6 months", "day_of_month": "1"},
+                "notifications": {"start": "336h0m0s"}
+            },
+            "membership_requires": {"roles": null, "traits": null},
+            "ownership_requires": {"roles": null, "traits": null},
+            "grants": {"roles": ["app-access"], "traits": null, "scoped_roles": null},
+            "owner_grants": {"roles": null, "traits": null, "scoped_roles": null}
+        }
+    },
+    {
+        "kind": "access_list",
+        "version": "v1",
+        "metadata": {
+            "name": "630e1125-3f58-42b0-b28a-da0512c55c31",
+            "expires": "0001-01-01T00:00:00Z",
+            "revision": "36005824-7809-469d-acd2-6b6a010dd3fc"
+        },
+        "spec": {
+            "title": "Production Access",
+            "description": "",
+            "owners": [
+                {"name": "alice", "ineligible_status": "INELIGIBLE_STATUS_ELIGIBLE", "membership_kind": "MEMBERSHIP_KIND_USER"},
+                {"name": "bob", "ineligible_status": "INELIGIBLE_STATUS_ELIGIBLE", "membership_kind": "MEMBERSHIP_KIND_USER"}
+            ],
+            "audit": {
+                "next_audit_date": "2026-03-13T07:00:00Z",
+                "recurrence": {"frequency": "6 months", "day_of_month": "1"},
+                "notifications": {"start": "336h0m0s"}
+            },
+            "membership_requires": {"roles": null, "traits": null},
+            "ownership_requires": {"roles": null, "traits": null},
+            "grants": {"roles": ["access-mcp-prod"], "traits": null, "scoped_roles": null},
+            "owner_grants": {"roles": null, "traits": null, "scoped_roles": null}
+        }
+    }
+]

@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+
+# Mock tctl binary for teleport-acl-review evals. Reads fixtures from the same
+# directory instead of hitting a real cluster.
+
+import os, sys
+
+dir = os.path.dirname(os.path.abspath(__file__))
+args = sys.argv[1:]
+
+def read(filename):
+    with open(os.path.join(dir, filename)) as f:
+        print(f.read(), end="")
+
+if args[:2] == ["acl", "ls"]:
+    read("acl-ls-mixed.json")
+elif args[:3] == ["acl", "reviews", "ls"]:
+    read(f"acl-reviews-{args[3][:8]}.txt")
+elif args[:3] == ["acl", "reviews", "create"]:
+    print(f'Successfully created review for access list "{args[3]}".')
+elif args[:3] == ["acl", "users", "ls"]:
+    read(f"acl-users-{args[3][:8]}.txt")
+elif args[:1] == ["status"]:
+    read("tsh-status.txt")
+else:
+    print(f"mock-tctl: unrecognized command: {' '.join(args)}", file=sys.stderr)
+    sys.exit(1)

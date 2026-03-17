@@ -1,0 +1,26 @@
+{
+  "skill_name": "teleport-acl-review",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Review my Teleport access lists. tctl is at evals/files/mock-tctl.",
+      "expected_output": "A risk assessment table showing 2 access lists. 'Production Access' (grants: access-mcp-prod, with recurring member removals) is marked ❌. 'Low Risk Apps Access' (grants: app-access, clean history) is marked ✅. The skill asks for confirmation before submitting any reviews. No tctl acl reviews create commands are run.",
+      "files": [
+        "evals/files/mock-tctl",
+        "evals/files/acl-ls-mixed.json",
+        "evals/files/acl-reviews-59182055.txt",
+        "evals/files/acl-reviews-630e1125.txt",
+        "evals/files/acl-users-59182055.txt",
+        "evals/files/acl-users-630e1125.txt",
+        "evals/files/tsh-status.txt"
+      ],
+      "assertions": [
+        "A markdown table is shown with columns: List Title, Review Due Date, Auto-Review, Risk Assessment",
+        "'Production Access' is marked ❌ and the risk assessment mentions 'mcp' or 'prod' in the role name and member removals",
+        "'Low Risk Apps Access' is marked ✅",
+        "The skill asks for confirmation before submitting reviews",
+        "No 'tctl acl reviews create' command is executed"
+      ]
+    }
+  ]
+}
