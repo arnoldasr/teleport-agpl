@@ -25,7 +25,7 @@ import { Rule } from 'shared/components/Validation/rules';
 import { Regions as AwsRegion } from 'teleport/services/integrations';
 
 import { RegionMultiSelector } from '../RegionMultiSelector';
-import { CircleNumber } from './EnrollAws';
+import { CircleNumber } from '../Shared';
 import { awsRegionGroups } from './regions';
 import { WildcardRegion } from './types';
 
