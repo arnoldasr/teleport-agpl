@@ -6624,7 +6624,7 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 	t.Setenv("TELEPORT_UNSTABLE_SCOPES", "yes")
 
 	srv := newTestTLSServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	adminClient, err := srv.NewClient(authtest.TestAdmin())
 	require.NoError(t, err)
@@ -6682,7 +6682,7 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 	defer scopedClient.Close()
 
 	t.Run("without secrets", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		watcher, err := scopedClient.NewWatcher(ctx, types.Watch{
@@ -6704,7 +6704,7 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 	})
 
 	t.Run("with secrets", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
 		watcher, err := scopedClient.NewWatcher(ctx, types.Watch{
@@ -6712,6 +6712,31 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 			Kinds: []types.WatchKind{{
 				Kind:        types.KindCertAuthority,
 				LoadSecrets: true,
+			}},
+		})
+		require.NoError(t, err)
+		defer watcher.Close()
+
+		select {
+		case <-watcher.Events():
+			t.Fatal("expected watcher to close with error, got event")
+		case <-watcher.Done():
+			require.True(t, trace.IsAccessDenied(watcher.Error()),
+				"expected access denied, got: %v", watcher.Error())
+		}
+	})
+
+	t.Run("unauthorized kind", func(t *testing.T) {
+		// todo: this triggers a panic because the implementation is bad.
+		// revisit and fix implementation.
+		// specific case here is we panic with any non CertAuthority kind...
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+
+		watcher, err := scopedClient.NewWatcher(ctx, types.Watch{
+			Name: "user-watch",
+			Kinds: []types.WatchKind{{
+				Kind: types.KindUser,
 			}},
 		})
 		require.NoError(t, err)
