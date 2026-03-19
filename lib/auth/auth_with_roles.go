@@ -1233,6 +1233,15 @@ func (a *ServerWithRoles) hasWatchPermissionForKind(ctx context.Context, kind ty
 
 		return nil
 	}
+	// todo(noah): I don't particularly like the implicit nature of the flow
+	// from the RPC handler down to here. The whole nilness of a.scopedContext
+	// and a.Context depending on whether we've invoked AuthorizeScoped or
+	// Authorize at the RPC handler level is hard to follow - perhaps we should
+	// always call AuthorizeScoped and ensure that the scopedContext is used for
+	// RBAC checks.
+	if a.scopedContext != nil {
+		return trace.AccessDenied("watching %q is not supported for scoped identities", kind.Kind)
+	}
 	return trace.Wrap(a.authorizeAction(kind.Kind, verb))
 }
 

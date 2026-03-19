@@ -6681,7 +6681,7 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 	require.NoError(t, err)
 	defer scopedClient.Close()
 
-	t.Run("without secrets", func(t *testing.T) {
+	t.Run("ca without secrets", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
@@ -6703,7 +6703,7 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 		}
 	})
 
-	t.Run("with secrets", func(t *testing.T) {
+	t.Run("ca with secrets", func(t *testing.T) {
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
@@ -6727,9 +6727,6 @@ func TestWatchEvents_ScopedIdentity(t *testing.T) {
 	})
 
 	t.Run("unauthorized kind", func(t *testing.T) {
-		// todo: this triggers a panic because the implementation is bad.
-		// revisit and fix implementation.
-		// specific case here is we panic with any non CertAuthority kind...
 		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 		defer cancel()
 
