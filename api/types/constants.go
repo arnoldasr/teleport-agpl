@@ -705,6 +705,9 @@ const (
 	// KindCertAuthorityOverride is the resource kind for CA overrides.
 	KindCertAuthorityOverride = "cert_authority_override"
 
+	// KindBeam is an ephemeral AI-optimized compute environment.
+	KindBeam = "beam"
+
 	// V8 is the eighth version of resources.
 	V8 = "v8"
 
