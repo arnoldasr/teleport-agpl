@@ -74,8 +74,23 @@ func (l *Limiter) RegisterRequest(token string) error {
 	return l.rateLimiter.RegisterRequest(token, nil)
 }
 
+// RegisterRequestWithCustomRate checks the request against both
+// the named custom rate bucket and the default rate bucket when
+// a named rate set is present. Both must pass for the request to
+// succeed. When the rate set is nil or unnamed, only the default
+// rate bucket is checked.
 func (l *Limiter) RegisterRequestWithCustomRate(token string, customRate *ratelimit.RateSet) error {
-	return l.rateLimiter.RegisterRequest(token, customRate)
+	if customRate != nil && customRate.Name() != "" {
+		// Check the named custom rate bucket.
+		key := customRate.Name() + ":" + token
+		err := l.rateLimiter.RegisterRequest(key, customRate)
+		if err != nil {
+			return err
+		}
+	}
+	// Check all requests against the default rate, including
+	// those that already passed a named custom rate check above.
+	return l.rateLimiter.RegisterRequest(token, nil)
 }
 
 func (l *Limiter) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -113,8 +128,16 @@ func (l *Limiter) RegisterRequestAndConnection(token string) (func(), error) {
 
 type RateSet = ratelimit.RateSet
 
-// NewRateSet crates an empty `RateSet` instance.
+// NewRateSet creates an empty RateSet instance.
 func NewRateSet() *RateSet { return ratelimit.NewRateSet() }
+
+// NewNamedRateSet creates an empty RateSet with the given name.
+// The name is used as a key prefix in the rate limiter so that
+// different named rate sets maintain independent token buckets per
+// client.
+func NewNamedRateSet(name string) *RateSet {
+	return ratelimit.NewNamedRateSet(name)
+}
 
 // UnaryServerInterceptor returns a gRPC unary interceptor which
 // rate limits by client IP.
