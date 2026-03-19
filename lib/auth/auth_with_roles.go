@@ -1111,7 +1111,7 @@ func (a *ServerWithRoles) KeepAliveServer(ctx context.Context, handle types.Keep
 // NewStream returns a new event stream (equivalent to NewWatcher, but with slightly different
 // performance characteristics).
 func (a *ServerWithRoles) NewStream(ctx context.Context, watch types.Watch) (stream.Stream[types.Event], error) {
-	if err := a.authorizeWatchRequest(&watch); err != nil {
+	if err := a.authorizeWatchRequest(ctx, &watch); err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return a.authServer.NewStream(ctx, watch)
@@ -1119,21 +1119,21 @@ func (a *ServerWithRoles) NewStream(ctx context.Context, watch types.Watch) (str
 
 // NewWatcher returns a new event watcher
 func (a *ServerWithRoles) NewWatcher(ctx context.Context, watch types.Watch) (types.Watcher, error) {
-	if err := a.authorizeWatchRequest(&watch); err != nil {
+	if err := a.authorizeWatchRequest(ctx, &watch); err != nil {
 		return nil, trace.Wrap(err)
 	}
 	return a.authServer.NewWatcher(ctx, watch)
 }
 
 // authorizeWatchRequest performs permission checks and filtering on incoming watch requests.
-func (a *ServerWithRoles) authorizeWatchRequest(watch *types.Watch) error {
+func (a *ServerWithRoles) authorizeWatchRequest(ctx context.Context, watch *types.Watch) error {
 	if len(watch.Kinds) == 0 {
 		return trace.AccessDenied("can't setup global watch")
 	}
 
 	validKinds := make([]types.WatchKind, 0, len(watch.Kinds))
 	for _, kind := range watch.Kinds {
-		err := a.hasWatchPermissionForKind(kind)
+		err := a.hasWatchPermissionForKind(ctx, kind)
 		if err != nil {
 			if watch.AllowPartialSuccess {
 				continue
@@ -1162,13 +1162,35 @@ func (a *ServerWithRoles) authorizeWatchRequest(watch *types.Watch) error {
 // hasWatchPermissionForKind checks the permissions for data of each kind.
 // For watching, most kinds of data just need a Read permission, but some
 // have more complicated logic.
-func (a *ServerWithRoles) hasWatchPermissionForKind(kind types.WatchKind) error {
+func (a *ServerWithRoles) hasWatchPermissionForKind(ctx context.Context, kind types.WatchKind) error {
 	verb := types.VerbRead
 	switch kind.Kind {
 	case types.KindCertAuthority:
 		if !kind.LoadSecrets {
 			verb = types.VerbReadNoSecrets
+		} else {
+			break
+			// For watch (w/ secrets), we will not permit scoped identities
+			// for now.
 		}
+		// For watching CA, we need to support Scoped Identities. Watching
+		// (w/o secrets) is an implicit permission available to all identities.
+		// For this, we require different authz checks, so we handle here.
+		if a.scopedContext != nil {
+			// nb: if hasWatchPermissionForKind is invoked down thru an RPC that
+			// does not call authorizeScoped then scopedContext will be missing.
+			// However, scopedContext will be present for an unscoped identity
+			// if authorizeScoped is called.
+			ruleCtx := a.scopedContext.RuleContext()
+			return a.scopedContext.CheckerContext.RiskyUnpinnedDecision(
+				ctx,
+				scopes.Root,
+				func(checker *services.SplitAccessChecker) error {
+					return checker.Common().CheckAccessToRules(&ruleCtx, kind.Kind, verb)
+				},
+			)
+		}
+
 	case types.KindAccessRequest:
 		var filter types.AccessRequestFilter
 		if err := filter.FromMap(kind.Filter); err != nil {
