@@ -14,16 +14,35 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//go:build !darwin && !windows && !linux
-
 package vnet
 
 import (
 	"context"
 
+	"github.com/gravitational/trace"
+
 	"github.com/gravitational/teleport/lib/vnet/diag"
 )
 
 func (s *Service) platformDiagChecks(ctx context.Context) ([]diag.DiagCheck, error) {
-	return nil, nil
+	routeConflictDiag, err := diag.NewRouteConflictDiag(&diag.RouteConflictConfig{
+		VnetIfaceName: s.networkStackInfo.InterfaceName,
+		Routing:       &diag.LinuxRouting{},
+		Interfaces:    &diag.NetInterfaces{},
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	sshDiag, err := diag.NewSSHDiag(&diag.SSHConfig{
+		ProfilePath: s.cfg.profilePath,
+	})
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return []diag.DiagCheck{
+		routeConflictDiag,
+		sshDiag,
+	}, nil
 }

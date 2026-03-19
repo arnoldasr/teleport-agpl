@@ -1,3 +1,5 @@
+//go:build linux
+
 // Teleport
 // Copyright (C) 2025 Gravitational, Inc.
 //
@@ -14,16 +16,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-//go:build !darwin && !windows && !linux
-
-package vnet
+package diag
 
 import (
-	"context"
+	"slices"
+	"testing"
 
-	"github.com/gravitational/teleport/lib/vnet/diag"
+	"github.com/stretchr/testify/require"
 )
 
-func (s *Service) platformDiagChecks(ctx context.Context) ([]diag.DiagCheck, error) {
-	return nil, nil
+// TestLinuxRouting is just a smoke test to verify that LinuxRouting does not blow up when ran on
+// an actual Linux machine.
+func TestLinuxRouting(t *testing.T) {
+	lr := LinuxRouting{}
+
+	rds, err := lr.GetRouteDestinations()
+	require.NoError(t, err)
+	require.NotEmpty(t, rds)
+
+	hasNonDefaultRoute := slices.ContainsFunc(rds, func(rd RouteDest) bool {
+		return !rd.IsDefault()
+	})
+	// Check that the code that converts rtnetlink routes to RouteDest isn't bugged and doesn't just
+	// cast everything to 0.0.0.0.
+	require.True(t, hasNonDefaultRoute, "Expected routes to include at least one route with a non-default destination, got: %+v", rds)
 }
