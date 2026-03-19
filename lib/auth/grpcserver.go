@@ -533,6 +533,9 @@ const logInterval = 10000
 
 // WatchEvents returns a new stream of cluster events
 func (g *GRPCServer) WatchEvents(watch *authpb.Watch, stream authpb.AuthService_WatchEventsServer) (err error) {
+	// TODO(noah): I'm not totally sure I like this approach of authenticate and
+	// fall back to scopedAuthenticate. Other choice is to rewrite entire RPC
+	// to support scoped checker (even for unscoped idents).
 	auth, err := g.authenticate(stream.Context())
 	if err != nil {
 		if errors.Is(err, services.ErrScopedIdentity) {

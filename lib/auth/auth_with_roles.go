@@ -1168,19 +1168,14 @@ func (a *ServerWithRoles) hasWatchPermissionForKind(ctx context.Context, kind ty
 	case types.KindCertAuthority:
 		if !kind.LoadSecrets {
 			verb = types.VerbReadNoSecrets
-		} else {
-			break
-			// For watch (w/ secrets), we will not permit scoped identities
-			// for now.
 		}
 		// For watching CA, we need to support Scoped Identities. Watching
 		// (w/o secrets) is an implicit permission available to all identities.
 		// For this, we require different authz checks, so we handle here.
 		if a.scopedContext != nil {
-			// nb: if hasWatchPermissionForKind is invoked down thru an RPC that
-			// does not call authorizeScoped then scopedContext will be missing.
-			// However, scopedContext will be present for an unscoped identity
-			// if authorizeScoped is called.
+			if kind.LoadSecrets {
+				return trace.AccessDenied("scoped identities cannot watch CA with secrets")
+			}
 			ruleCtx := a.scopedContext.RuleContext()
 			return a.scopedContext.CheckerContext.RiskyUnpinnedDecision(
 				ctx,
