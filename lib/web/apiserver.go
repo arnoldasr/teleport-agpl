@@ -102,6 +102,7 @@ import (
 	"github.com/gravitational/teleport/lib/plugin"
 	"github.com/gravitational/teleport/lib/proxy"
 	"github.com/gravitational/teleport/lib/reversetunnelclient"
+	"github.com/gravitational/teleport/lib/scopes"
 	"github.com/gravitational/teleport/lib/secret"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/readonly"
@@ -1746,16 +1747,16 @@ func (h *Handler) ping(w http.ResponseWriter, r *http.Request, p httprouter.Para
 	updaterID := r.URL.Query().Get(webclient.AgentUpdateIDParameter)
 
 	return webclient.PingResponse{
-		Auth:                    authSettings,
-		Proxy:                   *proxyConfig,
-		ServerVersion:           teleport.Version,
-		MinClientVersion:        teleport.MinClientSemVer().String(),
-		ClusterName:             h.auth.clusterName,
-		AutomaticUpgrades:       pr.ServerFeatures.GetAutomaticUpgrades(),
-		AutoUpdate:              h.automaticUpdateSettings184(r.Context(), group, updaterID),
-		Edition:                 h.cfg.Modules.BuildType(),
-		FIPS:                    h.cfg.Modules.IsBoringBinary(),
-		AuthServerScopesEnabled: &pr.ScopesEnabled,
+		Auth:                   authSettings,
+		Proxy:                  *proxyConfig,
+		ServerVersion:          teleport.Version,
+		MinClientVersion:       teleport.MinClientSemVer().String(),
+		ClusterName:            h.auth.clusterName,
+		AutomaticUpgrades:      pr.ServerFeatures.GetAutomaticUpgrades(),
+		AutoUpdate:             h.automaticUpdateSettings184(r.Context(), group, updaterID),
+		Edition:                h.cfg.Modules.BuildType(),
+		FIPS:                   h.cfg.Modules.IsBoringBinary(),
+		AuthServerScopesStatus: scopes.ScopesStatusToString(pr.ScopesStatus),
 	}, nil
 }
 

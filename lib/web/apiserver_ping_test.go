@@ -233,19 +233,22 @@ func TestPing(t *testing.T) {
 
 func TestPing_scopesEnabled(t *testing.T) {
 	tests := []struct {
-		name          string
-		envValue      string
-		expectEnabled bool
+		name                        string
+		envValue                    string
+		expectProxyEnabled          bool
+		expectAuthServerScopesField string
 	}{
 		{
-			name:          "scopes disabled by default",
-			envValue:      "",
-			expectEnabled: false,
+			name:                        "scopes disabled by default",
+			envValue:                    "",
+			expectProxyEnabled:          false,
+			expectAuthServerScopesField: "disabled",
 		},
 		{
-			name:          "scopes enabled",
-			envValue:      "yes",
-			expectEnabled: true,
+			name:                        "scopes enabled",
+			envValue:                    "yes",
+			expectProxyEnabled:          true,
+			expectAuthServerScopesField: "enabled",
 		},
 	}
 
@@ -263,9 +266,8 @@ func TestPing_scopesEnabled(t *testing.T) {
 			var pingResp webclient.PingResponse
 			require.NoError(t, json.Unmarshal(resp.Bytes(), &pingResp))
 
-			assert.Equal(t, test.expectEnabled, pingResp.Proxy.ScopesEnabled)
-			require.NotNil(t, pingResp.AuthServerScopesEnabled)
-			assert.Equal(t, test.expectEnabled, *pingResp.AuthServerScopesEnabled)
+			assert.Equal(t, test.expectProxyEnabled, pingResp.Proxy.ScopesEnabled)
+			assert.Equal(t, test.expectAuthServerScopesField, pingResp.AuthServerScopesStatus)
 		})
 	}
 }

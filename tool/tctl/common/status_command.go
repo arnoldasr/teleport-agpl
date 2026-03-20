@@ -40,6 +40,7 @@ import (
 	"github.com/gravitational/teleport/api/utils/keys"
 	"github.com/gravitational/teleport/lib/asciitable"
 	"github.com/gravitational/teleport/lib/auth/authclient"
+	"github.com/gravitational/teleport/lib/scopes"
 	"github.com/gravitational/teleport/lib/service/servicecfg"
 	"github.com/gravitational/teleport/lib/tlsca"
 	"github.com/gravitational/teleport/lib/utils"
@@ -135,7 +136,7 @@ func (m *statusModel) renderText(w io.Writer, debug bool) error {
 	summaryTable := asciitable.MakeHeadlessTable(2)
 	summaryTable.AddRow([]string{"Cluster:", m.cluster.name})
 	summaryTable.AddRow([]string{"Version:", m.cluster.version})
-	summaryTable.AddRow([]string{"Auth Server Scopes enabled:", fmt.Sprintf("%t", m.cluster.scopesEnabled)})
+	summaryTable.AddRow([]string{"Auth Server Scopes Status:", scopes.ScopesStatusToString(m.cluster.scopesStatus)})
 	for i, caPin := range m.cluster.caPins {
 		if i == 0 {
 			summaryTable.AddRow([]string{"CA pins:", caPin})
@@ -190,10 +191,10 @@ func sortRows(rows [][]string) {
 }
 
 type clusterStatusModel struct {
-	name          string
-	version       string
-	caPins        []string
-	scopesEnabled bool
+	name         string
+	version      string
+	caPins       []string
+	scopesStatus proto.ScopesStatus
 }
 
 func newClusterStatusModel(pingResp proto.PingResponse, authorities []types.CertAuthority) (*clusterStatusModel, error) {
@@ -212,10 +213,10 @@ func newClusterStatusModel(pingResp proto.PingResponse, authorities []types.Cert
 		}
 	}
 	return &clusterStatusModel{
-		name:          pingResp.ClusterName,
-		version:       pingResp.ServerVersion,
-		caPins:        pins,
-		scopesEnabled: pingResp.ScopesEnabled,
+		name:         pingResp.ClusterName,
+		version:      pingResp.ServerVersion,
+		caPins:       pins,
+		scopesStatus: pingResp.ScopesStatus,
 	}, nil
 }
 

@@ -4792,20 +4792,20 @@ func testCreateAccessListReminderNotifications(t *testing.T) {
 
 func TestPing(t *testing.T) {
 	type fixture struct {
-		name          string
-		scopesEnabled bool
-		envVar        string
+		name         string
+		envVar       string
+		scopesStatus proto.ScopesStatus
 	}
 	fixtures := []fixture{
 		{
-			name:          "scopes disabled",
-			scopesEnabled: false,
-			envVar:        "",
+			name:         "scopes disabled",
+			envVar:       "",
+			scopesStatus: proto.ScopesStatus_SCOPES_STATUS_DISABLED,
 		},
 		{
-			name:          "scopes enabled",
-			scopesEnabled: true,
-			envVar:        "yes",
+			name:         "scopes enabled",
+			envVar:       "yes",
+			scopesStatus: proto.ScopesStatus_SCOPES_STATUS_ENABLED,
 		},
 	}
 
@@ -4819,7 +4819,7 @@ func TestPing(t *testing.T) {
 			assert.Equal(t, teleport.Version, resp.ServerVersion)
 			assert.NotNil(t, resp.ServerFeatures)
 			assert.NotNil(t, resp.LicenseExpiry)
-			assert.Equal(t, f.scopesEnabled, resp.ScopesEnabled)
+			assert.Equal(t, f.scopesStatus, resp.ScopesStatus)
 		})
 	}
 }
