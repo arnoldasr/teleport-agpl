@@ -490,7 +490,7 @@ func newFakeScopedAuthorizer(t *testing.T, accessInfo *services.AccessInfo, read
 					Name: accessInfo.Username,
 				},
 			},
-			CheckerContext: services.NewScopedSplitAccessCheckerContext(scopedCtx),
+			CheckerContext: scopedCtx,
 		},
 	}
 }
@@ -547,7 +547,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -565,7 +565,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging/aa"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -583,7 +583,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging/aa"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -601,7 +601,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging/aa"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -619,7 +619,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging/aa"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -637,7 +637,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging/aa"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},
@@ -655,7 +655,7 @@ func newBackendPack(t *testing.T) *backendPack {
 			Scope: "/prod",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/prod"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{types.KindScopedToken},

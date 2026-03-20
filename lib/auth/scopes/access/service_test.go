@@ -67,7 +67,7 @@ func newFakeScopedAuthorizer(t *testing.T, accessInfo *services.AccessInfo, read
 					Name: accessInfo.Username,
 				},
 			},
-			CheckerContext: services.NewScopedSplitAccessCheckerContext(scopedCtx),
+			CheckerContext: scopedCtx,
 		},
 	}
 }
@@ -88,7 +88,7 @@ func newFakeUnscopedAuthorizer(t *testing.T, accessInfo *services.AccessInfo, re
 					Name: accessInfo.Username,
 				},
 			},
-			CheckerContext: services.NewUnscopedSplitAccessCheckerContext(checker),
+			CheckerContext: services.NewScopedAccessCheckerContextFromUnscoped(checker),
 		},
 	}
 }
@@ -181,7 +181,7 @@ func TestRoleBasics(t *testing.T) {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},
@@ -200,7 +200,7 @@ func TestRoleBasics(t *testing.T) {
 			Scope: "/prod",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/prod"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},
@@ -272,7 +272,7 @@ func TestRoleBasics(t *testing.T) {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},
@@ -302,7 +302,7 @@ func TestRoleBasics(t *testing.T) {
 			Scope: "/prod",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/prod"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},
@@ -441,7 +441,7 @@ func TestAssignmentBasics(t *testing.T) {
 			Scope: "/staging",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/staging"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},
@@ -460,7 +460,7 @@ func TestAssignmentBasics(t *testing.T) {
 			Scope: "/prod",
 			Spec: &scopedaccessv1.ScopedRoleSpec{
 				AssignableScopes: []string{"/prod"},
-				Allow: &scopedaccessv1.ScopedRoleConditions{
+				Teleport: &scopedaccessv1.ScopedRoleTeleport{
 					Rules: []*scopedaccessv1.ScopedRule{
 						{
 							Resources: []string{scopedaccess.KindScopedRole, scopedaccess.KindScopedRoleAssignment},

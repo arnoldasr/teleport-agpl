@@ -21,22 +21,27 @@ package services
 import (
 	"context"
 	"log/slog"
+	"slices"
+	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gravitational/trace"
 
 	"github.com/gravitational/teleport/api/constants"
-	decisionpb "github.com/gravitational/teleport/api/gen/proto/go/teleport/decision/v1alpha1"
+	apidefaults "github.com/gravitational/teleport/api/defaults"
 	headerv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/header/v1"
 	scopedaccessv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/scopes/access/v1"
 	scopesv1 "github.com/gravitational/teleport/api/gen/proto/go/teleport/scopes/v1"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/api/types/wrappers"
 	"github.com/gravitational/teleport/api/utils/keys"
+	dtauthz "github.com/gravitational/teleport/lib/devicetrust/authz"
 	"github.com/gravitational/teleport/lib/itertools/stream"
 	"github.com/gravitational/teleport/lib/scopes"
 	scopedaccess "github.com/gravitational/teleport/lib/scopes/access"
 	"github.com/gravitational/teleport/lib/scopes/pinning"
+	"github.com/gravitational/teleport/lib/sshca"
 	"github.com/gravitational/teleport/lib/utils/once"
 )
 
@@ -46,6 +51,36 @@ import (
 var ErrScopedIdentity = &trace.AccessDeniedError{
 	Message: "scoped identities not supported",
 }
+
+// checkAccessToRulesImpl verifies that *all* of a series of verbs are permitted for the specified resource. This
+// function differs from AccessChecker.CheckAccessToRule in that it does not support advanced context-based features
+// or namespacing, and accepts a set of verbs all of which must evaluate to allow for the check to succeed.
+func checkAccessToRulesImpl(checker AccessChecker, ctx RuleContext, resource string, verbs ...string) error {
+	if len(verbs) == 0 {
+		return trace.BadParameter("malformed rule check for %q, no verbs provided (this is a bug)", resource)
+	}
+	for _, verb := range verbs {
+		if err := checker.CheckAccessToRule(ctx, apidefaults.Namespace, resource, verb); err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	return nil
+}
+
+// checkMaybeHasAccessToRulesImpl returns an error if the checker definitely does not have access to the provided rules.
+func checkMaybeHasAccessToRulesImpl(checker AccessChecker, ctx RuleContext, resource string, verbs ...string) error {
+	if len(verbs) == 0 {
+		return trace.BadParameter("malformed maybe has access to rule check for %q, no verbs provided (this is a bug)", resource)
+	}
+	for _, verb := range verbs {
+		if err := checker.GuessIfAccessIsPossible(ctx, apidefaults.Namespace, resource, verb); err != nil {
+			return trace.Wrap(err)
+		}
+	}
+	return nil
+}
+
+// ── ScopedAccessCheckerContext ───────────────────────────────────────────────
 
 // roleCheckerKey identifies a unique single-role checker configuration by the combination of
 // scope of origin, scope of effect, and role name.
@@ -58,21 +93,20 @@ type roleCheckerKey struct {
 // defaultImplicitRoleKey is a sentinel key used to identify the default implicit role checker in caches.
 var defaultImplicitRoleKey = roleCheckerKey{}
 
-// ScopedAccessCheckerContext is the top-level scoped access checker state. It builds and caches scoped access
-// checkers for individual roles based on a user's identity and scope hierarchy.
+// ScopedAccessCheckerContext is the top-level access checker state, abstracting over scoped and unscoped
+// identities. For scoped identities it builds and caches per-role checkers based on the user's scope pin
+// and role assignments. For unscoped identities it wraps a standard AccessChecker.
 type ScopedAccessCheckerContext struct {
-	builder scopedAccessCheckerBuilder
-	// cachedCheckerForRole wraps builder.newCheckerForRole with a [once.KeyedValue] to retain previously built
-	// checkers. Checkers are cached by (scopeOfOrigin, scopeOfEffect, roleName) to support efficient reuse
-	// across multiple access checks within the same request.
+	// scoped path — populated when isScoped()
+	builder              scopedAccessCheckerBuilder
 	cachedCheckerForRole func(ctx context.Context, key roleCheckerKey) (*ScopedAccessChecker, error)
+
+	// unscoped path — populated when !isScoped()
+	unscopedChecker AccessChecker
 }
 
-// NewScopedAccessCheckerContext builds a scoped access checker context for a given identity. The context is
-// used to build scoped access checkers for individual roles, and to evaluate access to resources using
-// single-role evaluation semantics. Note that the supplied context.Context is captured and used to propagate
-// cancellation during loading of scoped roles. Cancellation of the context while access checks are still in
-// progress may result in spurious access denied errors.
+// NewScopedAccessCheckerContext builds a ScopedAccessCheckerContext for a scoped identity. The supplied
+// context.Context is captured for propagating cancellation during role loading.
 func NewScopedAccessCheckerContext(ctx context.Context, info *AccessInfo, localCluster string, reader ScopedRoleReader) (*ScopedAccessCheckerContext, error) {
 	builder := scopedAccessCheckerBuilder{
 		info:         info,
@@ -84,7 +118,6 @@ func NewScopedAccessCheckerContext(ctx context.Context, info *AccessInfo, localC
 		return nil, trace.Wrap(err)
 	}
 
-	// Cache checkers by (scopeOfOrigin, scopeOfEffect, roleName) tuple for efficient reuse
 	cachedCheckerForRole, _ := once.KeyedValue(builder.newCheckerForRole)
 
 	return &ScopedAccessCheckerContext{
@@ -93,34 +126,48 @@ func NewScopedAccessCheckerContext(ctx context.Context, info *AccessInfo, localC
 	}, nil
 }
 
-// ScopePin returns the scope pin that this context was created from.
-func (c *ScopedAccessCheckerContext) ScopePin() *scopesv1.Pin {
-	return c.builder.info.ScopePin
+// NewScopedAccessCheckerContextFromUnscoped builds a ScopedAccessCheckerContext wrapping an unscoped AccessChecker.
+func NewScopedAccessCheckerContextFromUnscoped(checker AccessChecker) *ScopedAccessCheckerContext {
+	return &ScopedAccessCheckerContext{unscopedChecker: checker}
 }
 
-// CheckersForResourceScope returns a stream of scoped access checkers in evaluation order for the specified
-// resource scope. Each checker represents a single role assignment, ordered first by scope of origin (ancestral
-// to descendant) and then by scope of effect (descendant to ancestral within each origin). This ordering ensures
-// that role evaluation follows the scoped role hierarchy rules where:
-//  1. Roles assigned from more ancestral scopes take precedence (preserving scope hierarchy)
-//  2. Within each origin, more specific role assignments take precedence (allowing specialization)
-//  3. The first role that permits access determines all parameters (single-role evaluation)
+// isScoped reports whether this context operates on a scoped identity.
+func (c *ScopedAccessCheckerContext) isScoped() bool {
+	return c.unscopedChecker == nil
+}
+
+// ScopePin returns the scope pin for the identity, if the identity is scoped.
+func (c *ScopedAccessCheckerContext) ScopePin() (*scopesv1.Pin, bool) {
+	if !c.isScoped() {
+		return nil, false
+	}
+	return c.builder.info.ScopePin, true
+}
+
+// CheckersForResourceScope returns a stream of ScopedAccessCheckers in evaluation order for the given resource
+// scope. For scoped identities, this enforces pin compliance and yields per-role checkers ordered by scope of
+// origin (ancestral to descendant) then scope of effect (descendant to ancestral). For unscoped identities,
+// yields a single checker wrapping the full unscoped context.
 //
-// This is the mechanism that *must* be used for getting checkers when checking access to a resource. This method
-// validates immediate compliance of the resource scope with the scope pin and yields correctly ordered checkers
-// for resource access evaluation. Subsequent decision parameterization must be performed with the checker that
-// yielded the initial allow decision.
+// This is the mechanism that *must* be used for getting checkers when checking access to a resource.
 func (c *ScopedAccessCheckerContext) CheckersForResourceScope(ctx context.Context, scope string) stream.Stream[*ScopedAccessChecker] {
+	if !c.isScoped() {
+		return func(yield func(*ScopedAccessChecker, error) bool) {
+			yield(NewScopedAccessCheckerFromUnscoped(c.unscopedChecker), nil)
+		}
+	}
 	return c.checkersForResourceScope(ctx, scope, true /* enforce pin */)
 }
 
-// RiskyUnpinnedCheckersForResourceScope returns a stream of scoped access checkers for the specified resource
-// scope, but does not enforce the pinning scope. This is a risky operation that should only be used for certain
-// APIs that make an exception to pinning exclusion rules (e.g. allowing read operations to succeed for resources
-// in a parent to the pinned scope).
+// RiskyUnpinnedCheckersForResourceScope is equivalent to CheckersForResourceScope except that it bypasses
+// enforcement of the pinning scope. This is a risky operation that should only be used for certain APIs that
+// make an exception to pinning exclusion rules (e.g. allowing read operations for resources at a parent scope).
 func (c *ScopedAccessCheckerContext) RiskyUnpinnedCheckersForResourceScope(ctx context.Context, scope string) stream.Stream[*ScopedAccessChecker] {
-	// this method is a risky variant of CheckersForResourceScope that does not enforce the pinning scope, and should only be used
-	// in contexts where the caller is certain that the resource scope is compatible with the pinning scope.
+	if !c.isScoped() {
+		return func(yield func(*ScopedAccessChecker, error) bool) {
+			yield(NewScopedAccessCheckerFromUnscoped(c.unscopedChecker), nil)
+		}
+	}
 	return c.checkersForResourceScope(ctx, scope, false /* enforce pin */)
 }
 
@@ -150,24 +197,20 @@ func (c *ScopedAccessCheckerContext) checkersForResourceScope(ctx context.Contex
 			if !yield(defaultImplicitChecker, nil) {
 				return
 			}
-
 			// note that we are not incrementing successfullyResolved here. the default implicit role doesn't
-			// really count from the perspective of deciding wether or not we're hitting a systemic failure.
+			// really count from the perspective of deciding whether or not we're hitting a systemic failure.
 		}
 
 		// iterate through the ordered enforcement points for this resource scope. policy evaluation by scope is ordered first by
 		// Scope of Origin (ancestral to descendant) and then by Scope of Effect (descendant to ancestral within each origin).
 		// We proceed through each permutation in order, evaluating any roles assigned at that specific point.
 		for point := range scopes.EnforcementPointsForResourceScope(scope) {
-			// get all roles assigned at this (scopeOfOrigin, scopeOfEffect) pair
 			for roleName := range pinning.GetRolesAtEnforcementPoint(c.builder.info.ScopePin, point) {
-				// create/retrieve cached checker for this specific role
 				key := roleCheckerKey{
 					scopeOfOrigin: point.ScopeOfOrigin,
 					scopeOfEffect: point.ScopeOfEffect,
 					roleName:      roleName,
 				}
-
 				checker, err := c.cachedCheckerForRole(ctx, key)
 				if err != nil {
 					// in classic teleport access checking skipping a role would be unacceptable due to side effects and deny rules. the scoped model
@@ -176,11 +219,9 @@ func (c *ScopedAccessCheckerContext) checkersForResourceScope(ctx context.Contex
 					lastErr = err
 					continue
 				}
-
 				if !yield(checker, nil) {
 					return
 				}
-
 				successfullyResolved++
 			}
 		}
@@ -193,48 +234,128 @@ func (c *ScopedAccessCheckerContext) checkersForResourceScope(ctx context.Contex
 	}
 }
 
-// RiskyEnumerateCheckers returns a stream of all possible scoped access checkers for the identity. This method
-// enumerates every role assignment in the pin's assignment tree, yielding a checker for each one. The order is
-// undefined and should not be relied upon for access control decisions.
+// riskyEnumerateScopedCheckers returns a stream of all possible scoped access checkers for the identity,
+// enumerating every role assignment in the pin's assignment tree. The order is undefined and must not be
+// relied upon for access control decisions. This method panics if called on an unscoped context — it is
+// only meaningful for scoped identities.
 //
-// This method is not relevant for traditional access-control decisions as it yields checkers unrelated to any
-// particular resource scope, but is necessary for examining the full set of possible permissions during certain
-// operations, such as when determining the full set of ssh logins that a user might have access to. Note that use
-// of this method should be treated with extreme caution. Accidental misuse could easily result in a scope isolation
-// violation.
-func (c *ScopedAccessCheckerContext) RiskyEnumerateCheckers(ctx context.Context) stream.Stream[*ScopedAccessChecker] {
+// Note that use of this method should be treated with extreme caution. Accidental misuse could easily
+// result in a scope isolation violation.
+func (c *ScopedAccessCheckerContext) riskyEnumerateScopedCheckers(ctx context.Context) stream.Stream[*ScopedAccessChecker] {
+	if !c.isScoped() {
+		panic("riskyEnumerateScopedCheckers called on an unscoped access checker context (this is a bug)")
+	}
 	return func(yield func(*ScopedAccessChecker, error) bool) {
-		// enumerate all role assignments in the entire pin, including assignments at scopes
-		// descendant to the pinned scope. This provides the complete set of possible permissions.
 		var yielded int
 		var lastErr error
 		for assignment := range pinning.EnumerateAllAssignments(c.builder.info.ScopePin) {
-			// create/retrieve cached checker for this specific role
 			key := roleCheckerKey{
 				scopeOfOrigin: assignment.ScopeOfOrigin,
 				scopeOfEffect: assignment.ScopeOfEffect,
 				roleName:      assignment.RoleName,
 			}
-
 			checker, err := c.cachedCheckerForRole(ctx, key)
 			if err != nil {
 				slog.WarnContext(ctx, "skipping role evaluation due to error", "role_name", assignment.RoleName, "scope_of_origin", assignment.ScopeOfOrigin, "scope_of_effect", assignment.ScopeOfEffect, "error", err)
 				continue
 			}
-
 			if !yield(checker, nil) {
 				return
 			}
-
 			yielded++
 		}
-
 		if yielded == 0 && lastErr != nil {
-			// if we didn't yield any checkers and encountered errors, return the last error encountered.
 			yield(nil, lastErr)
 		}
 	}
 }
+
+// CheckMaybeHasAccessToRules returns an error if the context definitely does not have access to the provided
+// rules. For scoped identities, always returns nil — the scoped access model evaluates permissions per-resource.
+func (c *ScopedAccessCheckerContext) CheckMaybeHasAccessToRules(ctx RuleContext, resource string, verbs ...string) error {
+	if !c.isScoped() {
+		return checkMaybeHasAccessToRulesImpl(c.unscopedChecker, ctx, resource, verbs...)
+	}
+	return nil
+}
+
+// Decision calls fn against each checker in the resource scope evaluation order until one of three
+// conditions is met: (1) fn succeeds, (2) fn returns an explicitly denied error, or (3) all checkers
+// have been exhausted (implicit deny).
+func (c *ScopedAccessCheckerContext) Decision(ctx context.Context, scope string, fn func(*ScopedAccessChecker) error) error {
+	return c.decision(ctx, c.CheckersForResourceScope(ctx, scope), fn)
+}
+
+// RiskyUnpinnedDecision is equivalent to Decision except that it bypasses enforcement of the pinning scope.
+func (c *ScopedAccessCheckerContext) RiskyUnpinnedDecision(ctx context.Context, scope string, fn func(*ScopedAccessChecker) error) error {
+	return c.decision(ctx, c.RiskyUnpinnedCheckersForResourceScope(ctx, scope), fn)
+}
+
+func (c *ScopedAccessCheckerContext) decision(ctx context.Context, checkers stream.Stream[*ScopedAccessChecker], fn func(*ScopedAccessChecker) error) error {
+	for checker, err := range checkers {
+		if err != nil {
+			return trace.Wrap(err)
+		}
+		err = fn(checker)
+		switch {
+		case err == nil:
+			return nil
+		case IsAccessExplicitlyDenied(err):
+			return trace.Wrap(err)
+		default:
+			// implicit deny, continue to the next check
+			continue
+		}
+	}
+	return trace.AccessDenied("access denied (decision)")
+}
+
+// AccessStateFromSSHIdentity builds an AccessState from an SSH identity, abstracting over scoped and
+// unscoped access state construction.
+func (c *ScopedAccessCheckerContext) AccessStateFromSSHIdentity(ctx context.Context, ident *sshca.Identity, authPrefGetter AuthPreferenceGetter) (AccessState, error) {
+	if !c.isScoped() {
+		return AccessStateFromSSHIdentity(ctx, ident, c.unscopedChecker, authPrefGetter)
+	}
+
+	authPref, err := authPrefGetter.GetAuthPreference(ctx)
+	if err != nil {
+		return AccessState{}, trace.Wrap(err)
+	}
+
+	if authPref.GetRequireMFAType().IsSessionMFARequired() {
+		// TODO(fspmarshall/scopes): implement scoped MFA
+		// NOTE: this will require additional refactoring of relevant access-checking logic. currently, we often
+		// check MFA requirements *before* we determine access to the underlying resource, but a scoped MFA model
+		// will need to first determine the scope of access *before* we can determine whether MFA is required for that scope.
+		return AccessState{}, trace.AccessDenied("cannot perform scoped access when cluster-level MFA is required (scoped MFA is not implemented)")
+	}
+
+	return AccessState{
+		// MFA state is hard-coded here because scoped roles do not support MFA yet, and the above check should reject
+		// cases where cluster-level config would obligate MFA.
+		MFARequired:              MFARequiredNever,
+		MFAVerified:              false,
+		EnableDeviceVerification: true,
+		DeviceVerified:           dtauthz.IsSSHDeviceVerified(ident),
+		IsBot:                    ident.IsBot(),
+	}, nil
+}
+
+// Traits returns the user traits for this context.
+func (c *ScopedAccessCheckerContext) Traits() wrappers.Traits {
+	if !c.isScoped() {
+		return c.unscopedChecker.Traits()
+	}
+	return c.builder.info.Traits
+}
+
+// CertParams returns a sub-context for resolving certificate parameters during certificate generation.
+// This should not be used outside of certificate generation logic.
+func (c *ScopedAccessCheckerContext) CertParams() *CertificateParameterContext {
+	return &CertificateParameterContext{ctx: c}
+}
+
+// ── scopedAccessCheckerBuilder ───────────────────────────────────────────────
 
 // scopedAccessCheckerBuilder is a helper that builds scoped access checkers.
 type scopedAccessCheckerBuilder struct {
@@ -243,29 +364,23 @@ type scopedAccessCheckerBuilder struct {
 	reader       ScopedRoleReader
 }
 
-// Check verifies that the builder was provided will all necessary parameters and that they are well-formed.
+// Check verifies that the builder was provided with all necessary parameters and that they are well-formed.
 func (b *scopedAccessCheckerBuilder) Check() error {
 	if b.reader == nil {
 		return trace.BadParameter("cannot create scoped access checkers without a scoped role reader")
 	}
-
 	if b.localCluster == "" {
 		return trace.BadParameter("cannot create scoped access checkers without a local cluster name")
 	}
-
 	if b.info.ScopePin == nil {
 		return trace.BadParameter("cannot create scoped access checkers for unscoped identity")
 	}
-
 	if len(b.info.AllowedResourceAccessIDs) != 0 {
 		return trace.BadParameter("cannot create scoped access checkers for identity with active resource IDs")
 	}
-
-	// validate that the scope pin is well-formed
 	if err := pinning.WeakValidate(b.info.ScopePin); err != nil {
 		return trace.Errorf("cannot create scoped access checkers: %w", err)
 	}
-
 	return nil
 }
 
@@ -273,7 +388,7 @@ func (b *scopedAccessCheckerBuilder) newCheckerForRole(ctx context.Context, key 
 	if key == defaultImplicitRoleKey {
 		return b.newDefaultImplicitChecker(ctx), nil
 	}
-	// fetch the scoped role by name
+
 	rsp, err := b.reader.GetScopedRole(ctx, &scopedaccessv1.GetScopedRoleRequest{
 		Name: key.roleName,
 	})
@@ -299,20 +414,17 @@ func (b *scopedAccessCheckerBuilder) newCheckerForRole(ctx context.Context, key 
 	}
 
 	// TODO(fspmarshall/scopes): figure out how/when we want to support trait interpolation in scoped
-	// roles. When we do, that will likely need to be done here. Whether we should perform trait
-	// interpolation on the per-conversion scoped role and add support piecemeal, or inherit
-	// identical trait interpolation from classic role behavior isn't clear yet, so at this
-	// stage we're just opting to skip entirely.
+	// roles. When we do, that will likely need to be done here.
 
 	// Create an access checker with this single role. Single-role evaluation is a core principle
 	// of the scoped access model - the first role that permits access determines all parameters.
 	checker := newAccessChecker(b.info, b.localCluster, NewRoleSet(role))
 
 	return &ScopedAccessChecker{
-		scopeOfOrigin: key.scopeOfOrigin,
-		scopeOfEffect: key.scopeOfEffect,
-		checker:       checker,
-		role:          rsp.Role,
+		scopeOfOrigin:       key.scopeOfOrigin,
+		scopeOfEffect:       key.scopeOfEffect,
+		role:                rsp.Role,
+		scopedCompatChecker: checker,
 	}, nil
 }
 
@@ -322,11 +434,11 @@ func (b *scopedAccessCheckerBuilder) newCheckerForRole(ctx context.Context, key 
 // include the default implicit role, this effectively simulates the presence of the default implicit role at root scope. Note that as
 // functionality of scoped roles further diverges from unscoped roles, we may need to revisit this approach in favor of defining our
 // own default implicit scoped role instead.
-func (b *scopedAccessCheckerBuilder) newDefaultImplicitChecker(ctx context.Context) *ScopedAccessChecker {
+func (b *scopedAccessCheckerBuilder) newDefaultImplicitChecker(_ context.Context) *ScopedAccessChecker {
 	return &ScopedAccessChecker{
-		scopeOfOrigin: scopes.Root,
-		scopeOfEffect: scopes.Root,
-		checker:       newAccessChecker(b.info, b.localCluster, NewRoleSet()), // default implicit role definition is auto-populated by NewRoleSet()
+		scopeOfOrigin:       scopes.Root,
+		scopeOfEffect:       scopes.Root,
+		scopedCompatChecker: newAccessChecker(b.info, b.localCluster, NewRoleSet()), // default implicit role definition is auto-populated by NewRoleSet()
 		role: &scopedaccessv1.ScopedRole{
 			Metadata: &headerv1.Metadata{
 				Name: constants.DefaultImplicitRole,
@@ -340,25 +452,54 @@ func (b *scopedAccessCheckerBuilder) newDefaultImplicitChecker(ctx context.Conte
 	}
 }
 
-// ScopedAccessChecker is similar to AccessChecker, but performs scoped checks using single-role evaluation
-// semantics. Each ScopedAccessChecker represents a single role assignment characterized by:
-//   - Scope of Origin: The scope from which the role assignment originates (determines authority/seniority)
-//   - Scope of Effect: The scope at which the role's privileges apply (determines applicability)
-//   - Role Name: The specific role being evaluated
+// ── ScopedAccessChecker ──────────────────────────────────────────────────────
+
+// ScopedAccessChecker performs access checks abstracting over scoped and unscoped identities.
 //
-// In the scoped access model, the first role (in evaluation order) that permits access to a resource determines
-// all subsequent access parameters. This differs from classic role evaluation where roles are aggregated and
-// the most restrictive settings win. For parameter checks (e.g. x11 forwarding, port forwarding), the same
-// checker instance that yielded the initial allow decision must be used to maintain consistency.
+// For scoped identities, each ScopedAccessChecker represents a single role assignment characterized by:
+//   - Scope of Origin: the scope from which the assignment originates (determines seniority)
+//   - Scope of Effect: the scope at which the role's privileges apply (determines applicability)
+//
+// In the scoped access model, the first role (in evaluation order) that permits access to a resource
+// determines all subsequent access parameters. This differs from classic role evaluation where roles are
+// aggregated and the most restrictive settings win.
+//
+// For unscoped identities, the full AccessChecker is wrapped directly and all method calls are delegated to it.
+//
+// ScopedAccessChecker instances should be obtained from ScopedAccessCheckerContext rather than constructed
+// directly. The exception is NewScopedAccessCheckerFromUnscoped for adapting an unscoped AccessChecker.
 type ScopedAccessChecker struct {
-	// scopeOfOrigin is the scope from which this role assignment originates
+	// scopeOfOrigin/scopeOfEffect are populated only for scoped identities; zero for unscoped.
 	scopeOfOrigin string
-	// scopeOfEffect is the scope at which this role's privileges apply
 	scopeOfEffect string
-	// checker is the underlying classic access checker with this single role
-	checker *accessChecker
-	// role is the original scoped role being evaluated
+
+	// role is the scoped role being evaluated, or nil for unscoped identities.
 	role *scopedaccessv1.ScopedRole
+
+	// scopedCompatChecker is a classic AccessChecker built from the scoped role via ScopedRoleToRole.
+	// Non-nil iff isScoped(). Used for checks that fall back to compat classic-role logic.
+	scopedCompatChecker AccessChecker
+
+	// unscopedChecker is the underlying unscoped AccessChecker.
+	// Non-nil iff !isScoped().
+	unscopedChecker AccessChecker
+}
+
+// NewScopedAccessCheckerFromUnscoped creates a ScopedAccessChecker wrapping an unscoped AccessChecker.
+// This is used in code paths that accept *ScopedAccessChecker but operate on an unscoped identity.
+func NewScopedAccessCheckerFromUnscoped(checker AccessChecker) *ScopedAccessChecker {
+	return &ScopedAccessChecker{unscopedChecker: checker}
+}
+
+// isScoped reports whether this checker operates on a scoped identity.
+func (c *ScopedAccessChecker) isScoped() bool {
+	return c.role != nil
+}
+
+// SSH returns an SSH-specific access checker backed by this checker. All SSH-specific methods
+// (logins, port forwarding, recording mode, idle timeout, etc.) live on [SSHAccessChecker].
+func (c *ScopedAccessChecker) SSH() *SSHAccessChecker {
+	return &SSHAccessChecker{checker: c}
 }
 
 // ScopeOfOrigin returns the scope from which this role assignment originates. Roles assigned from
@@ -368,8 +509,7 @@ func (c *ScopedAccessChecker) ScopeOfOrigin() string {
 }
 
 // ScopeOfEffect returns the scope at which this role's privileges apply. Within a given scope of
-// origin, roles with more descendant/specific scopes of effect take precedence over roles with
-// more ancestral/general scopes of effect.
+// origin, roles with more descendant/specific scopes of effect take precedence.
 func (c *ScopedAccessChecker) ScopeOfEffect() string {
 	return c.scopeOfEffect
 }
@@ -379,27 +519,43 @@ func (c *ScopedAccessChecker) RoleName() string {
 	return c.role.GetMetadata().GetName()
 }
 
-// ScopePin returns the scope pin that this checker was created from.
+// ScopePin returns the scope pin this checker was created from.
 func (c *ScopedAccessChecker) ScopePin() *scopesv1.Pin {
-	return c.checker.info.ScopePin
+	return c.AccessInfo().ScopePin
+}
+
+// AccessInfo returns the AccessInfo that this access checker is based on.
+func (c *ScopedAccessChecker) AccessInfo() *AccessInfo {
+	if !c.isScoped() {
+		return c.unscopedChecker.AccessInfo()
+	}
+	return c.scopedCompatChecker.AccessInfo()
 }
 
 // Traits returns the set of user traits.
 func (c *ScopedAccessChecker) Traits() wrappers.Traits {
-	// identical in scoped/unscoped contexts generally (there is no concept of
-	// scoped traits currently, and none is planned or would be feasible at least
-	// until we've fully migrated to PDP and deprecated certificate-based traits).
-	return c.checker.Traits()
+	// there is no concept of scoped traits currently, and none is planned or would be feasible at least
+	// until we've fully migrated to PDP and deprecated certificate-based traits.
+	if !c.isScoped() {
+		return c.unscopedChecker.Traits()
+	}
+	return c.scopedCompatChecker.Traits()
 }
 
 // CheckAccessToRules verifies that *all* of a series of verbs are permitted for the specified resource.
 func (c *ScopedAccessChecker) CheckAccessToRules(ctx RuleContext, resource string, verbs ...string) error {
-	return checkAccessToRulesImpl(c.checker, ctx, resource, verbs...)
+	if !c.isScoped() {
+		return checkAccessToRulesImpl(c.unscopedChecker, ctx, resource, verbs...)
+	}
+	return checkAccessToRulesImpl(c.scopedCompatChecker, ctx, resource, verbs...)
 }
 
-// CheckAccessToRemoteCluster checks access to remote cluster
+// CheckAccessToRemoteCluster checks access to a remote cluster.
 func (c *ScopedAccessChecker) CheckAccessToRemoteCluster(cluster types.RemoteCluster) error {
-	// remote cluster access is never permitted for scoped identities
+	if !c.isScoped() {
+		return c.unscopedChecker.CheckAccessToRemoteCluster(cluster)
+	}
+	// remote cluster access is never permitted for scoped identities.
 	// NOTE: it is unclear whether or not this method should even be implemented for the scoped access checker. it may be more
 	// sensible to force outer enforcement logic to grapple with the fact that a scoped checker does not support remote clusters
 	// at the type-level. this has been implemented experimentally to explore the pattern of having the scoped access checker
@@ -407,200 +563,216 @@ func (c *ScopedAccessChecker) CheckAccessToRemoteCluster(cluster types.RemoteClu
 	return trace.AccessDenied("remote cluster access is not permitted for scoped identities")
 }
 
-// GetSSHLogins returns the list of all SSH logins permitted by this scoped role.
-func (c *ScopedAccessChecker) GetSSHLogins() []string {
-	return c.role.GetSpec().GetAllow().GetLogins()
-}
-
-// AdjustSessionTTL will reduce the requested ttl to lowest max allowed TTL
-// for this role set, otherwise it returns ttl unchanged
+// AdjustSessionTTL will reduce the requested ttl to the lowest max allowed TTL for this role set.
 func (c *ScopedAccessChecker) AdjustSessionTTL(ttl time.Duration) time.Duration {
 	// the naive implementation of this method for scopes may have problematic interactions with
 	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.AdjustSessionTTL(ttl)
+	if !c.isScoped() {
+		return c.unscopedChecker.AdjustSessionTTL(ttl)
+	}
+	return c.scopedCompatChecker.AdjustSessionTTL(ttl)
 }
 
-// PrivateKeyPolicy returns the enforced private key policy for this role set,
-// or the provided defaultPolicy - whichever is stricter.
+// PrivateKeyPolicy returns the enforced private key policy, or the provided default, whichever is stricter.
 func (c *ScopedAccessChecker) PrivateKeyPolicy(defaultPolicy keys.PrivateKeyPolicy) (keys.PrivateKeyPolicy, error) {
 	// the naive implementation of this method for scopes may have problematic interactions with
 	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.PrivateKeyPolicy(defaultPolicy)
+	if !c.isScoped() {
+		return c.unscopedChecker.PrivateKeyPolicy(defaultPolicy)
+	}
+	return c.scopedCompatChecker.PrivateKeyPolicy(defaultPolicy)
 }
 
-// PinSourceIP forces the same client IP for certificate generation and SSH usage
+// PinSourceIP returns whether source IP pinning is enforced.
 func (c *ScopedAccessChecker) PinSourceIP() bool {
 	// the naive implementation of this method for scopes may have problematic interactions with
 	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.PinSourceIP()
+	if !c.isScoped() {
+		return c.unscopedChecker.PinSourceIP()
+	}
+	return c.scopedCompatChecker.PinSourceIP()
 }
 
-// CanPortForward returns true if this RoleSet can forward ports.
-func (c *ScopedAccessChecker) CanPortForward() bool {
-	// the naive implementation of this method for scopes may have problematic interactions with
-	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-
-	// NOTE: internally this method relies upon the SSHPortForwardMode() method. if future work
-	// on the scoped access checker causes us to change the behavior of that method, we will
-	// need to rework this method as well to ensure that it behaves consistently.
-	return c.checker.CanPortForward()
-}
-
-// CanForwardAgents returns true if this role set offers capability to forward
-// agents.
-func (c *ScopedAccessChecker) CanForwardAgents() bool {
-	// the naive implementation of this method for scopes may have problematic interactions with
-	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.CanForwardAgents()
-}
-
-// PermitX11Forwarding returns true if this RoleSet allows X11 Forwarding.
-func (c *ScopedAccessChecker) PermitX11Forwarding() bool {
-	// the naive implementation of this method for scopes may have problematic interactions with
-	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.PermitX11Forwarding()
-}
-
-// LockingMode returns the locking mode to apply with this checker.
+// LockingMode returns the locking mode to apply.
 func (c *ScopedAccessChecker) LockingMode(defaultMode constants.LockingMode) constants.LockingMode {
 	// the naive implementation of this method for scopes may have problematic interactions with
 	// cert parameter generation. see ../scopes/access/compat.go for more detailed discussion.
-	return c.checker.LockingMode(defaultMode)
+	if !c.isScoped() {
+		return c.unscopedChecker.LockingMode(defaultMode)
+	}
+	return c.scopedCompatChecker.LockingMode(defaultMode)
 }
 
-// AccessInfo returns the AccessInfo that this access checker is based on.
-func (c *ScopedAccessChecker) AccessInfo() *AccessInfo {
-	return c.checker.info
+// ── Certificate Parameters ───────────────────────────────────────────────────
+
+// UnscopedCertificateParameters represents a subset of the AccessChecker interface that
+// is used during certificate generation to obtain certificate parameters that are only
+// meaningful for unscoped identities.
+type UnscopedCertificateParameters interface {
+	RoleNames() []string
+	CertificateFormat() string
+	CertificateExtensions() []*types.CertExtension
+	CheckKubeGroupsAndUsers(ttl time.Duration, overrideTTL bool, matchers ...RoleMatcher) ([]string, []string, error)
+	CheckDatabaseNamesAndUsers(ttl time.Duration, overrideTTL bool) ([]string, []string, error)
+	CheckAWSRoleARNs(ttl time.Duration, overrideTTL bool) ([]string, error)
+	CheckAzureIdentities(ttl time.Duration, overrideTTL bool) ([]string, error)
+	CheckGCPServiceAccounts(ttl time.Duration, overrideTTL bool) ([]string, error)
+	GetAllowedResourceAccessIDs() []types.ResourceAccessID
+	CheckAccessToRemoteCluster(rc types.RemoteCluster) error
 }
 
-// HostSudoers returns the sudoers rules for the host.
-func (c *ScopedAccessChecker) HostSudoers(srv types.Server) ([]string, error) {
-	// scoped roles do not currently support host sudoers, but we don't currently foresee
-	// issues with mirroring the classic role interface here since host sudoers are not
-	// certificate-bound and are not calculated pre-access-check. depeding on wether or not
-	// we end up permitting scoped roles side-effects, the server parameter may be unnecessary.
-	return c.checker.HostSudoers(srv)
+// CertificateParameterContext provides methods for resolving certificate parameters that abstract
+// over scoped and unscoped identities. Methods on this type should only be called during certificate
+// generation and return parameters that need to be embedded in the certificate at issuance time. For
+// unscoped identities these parameters are generally equivalent to those returned by the underlying
+// AccessChecker. For scoped identities things get more complex as most certificate parameters cannot
+// be determined by scoped roles. Instead, parameters for scoped identities are generally hard-coded for
+// the time being, with the intent to revisit them in the future and to provide non-role means of
+// configuring them. See the Scopes RFD for more details on how scoped permissions intersect with
+// certificate parameters.
+type CertificateParameterContext struct {
+	ctx *ScopedAccessCheckerContext
 }
 
-// EnhancedRecordingSet returns the set of enhanced session recording
-// events to capture.
-func (c *ScopedAccessChecker) EnhancedRecordingSet() map[string]bool {
-	// scoped roles do not currently support enhanced session recording, but we don't currently
-	// foresee issues with mirroring the classic role interface here since enhanced session
-	// recording settings are not certificate-bound and are not calculated pre-access-check.
-	return c.checker.EnhancedRecordingSet()
+// UnscopedCertParams returns unscoped-specific certificate parameters if this is an unscoped
+// identity, or nil if this is a scoped identity. Use this for certificate parameters
+// that are only meaningful for unscoped identities (e.g., kube groups, db users).
+func (n *CertificateParameterContext) UnscopedCertParams() UnscopedCertificateParameters {
+	return n.ctx.unscopedChecker
 }
 
-// HostUsers returns host user information matching a server or nil if
-// a role disallows host user creation
-func (c *ScopedAccessChecker) HostUsers(srv types.Server) (*decisionpb.HostUsersInfo, error) {
-	// scoped roles do not currently support host users, but we don't currently foresee
-	// issues with mirroring the classic role interface here since host users are not
-	// certificate-bound and are not calculated pre-access-check. depeding on wether or not
-	// we end up permitting scoped roles side-effects, the server parameter may be unnecessary.
-	return c.checker.HostUsers(srv)
+// GetSSHLoginsForTTL verifies that the requested session TTL is valid and returns
+// the list of allowed logins for the certificate.
+//   - Unscoped: Returns logins from roles, restricted by role TTL rules
+//   - Scoped: Returns all possible logins across all roles in the pin. this behavior is necessary
+//     because we cannot determine the effective role without knowing the target resource, but the ssh
+//     protocol requires all valid principals to be present in the certificate at issuance time. Subsequent
+//     access checks will enforce login restrictions based on the effective role once the target resource
+//     is known. Note that this function is *not* safe to determine the logins to be used for OpenSSH agent
+//     access certs.
+func (n *CertificateParameterContext) GetSSHLoginsForTTL(ctx context.Context, ttl time.Duration) ([]string, error) {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.CheckLoginDuration(ttl)
+	}
+
+	// For scoped identities, enumerate all possible logins across all roles in the pin.
+	// We cannot restrict logins based on a single role since we don't know which role will
+	// grant access without knowing the target resource.
+	loginSet := make(map[string]struct{})
+
+	// Use of riskyEnumerateScopedCheckers is acceptable here because we are deliberately attempting to aggregate
+	// information across all roles, rather than making a specific access-control decision.
+	for checker, err := range n.ctx.riskyEnumerateScopedCheckers(ctx) {
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+
+		// Get logins from this checker. Pass 0 as TTL to get all logins without TTL restriction.
+		// We're not enforcing per-role TTL restrictions for scoped certs since the effective role
+		// is unknown at cert generation time.
+		for _, login := range checker.SSH().getScopedLogins() {
+			// Skip placeholder logins when aggregating across roles
+			if !strings.HasPrefix(login, constants.NoLoginPrefix) {
+				loginSet[login] = struct{}{}
+			}
+		}
+	}
+
+	// Convert map to sorted slice for deterministic output
+	logins := make([]string, 0, len(loginSet))
+	for login := range loginSet {
+		logins = append(logins, login)
+	}
+	slices.Sort(logins)
+
+	if len(logins) == 0 {
+		// User was deliberately configured to have no login capability,
+		// but SSH certificates must contain at least one valid principal.
+		// We add a single distinctive value which should be unique, and
+		// will never be a valid unix login (due to leading '-').
+		logins = []string{constants.NoLoginPrefix + uuid.New().String()}
+	}
+
+	return logins, nil
 }
 
-// CheckAgentForward checks if the role can request to forward the SSH agent
-// for this user.
-func (c *ScopedAccessChecker) CheckAgentForward(login string) error {
-	// scoped roles do not currently support agent forwarding, but we don't currently foresee
-	// issues with mirroring the classic role interface for the login-dependant variant of the
-	// check since this variant of the check is not related to the certificate-bound agent forwarding
-	// permission, and is not calculated pre-access-check. depeding on wether or not
-	// we end up permitting scoped roles side-effects, the login parameter may be unnecessary.
-	return c.checker.CheckAgentForward(login)
+// AdjustSessionTTL adjusts the requested session TTL based on role/configuration policies.
+func (n *CertificateParameterContext) AdjustSessionTTL(ttl time.Duration) time.Duration {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.AdjustSessionTTL(ttl)
+	}
+	// Scoped identities: return the requested TTL unchanged. We cannot restrict TTL based on roles
+	// since we don't know which role will grant access without knowing the target resource.
+	// TODO(fspmarshall/scopes): determine how to handle session TTL restrictions for scoped identities. This will
+	// likely involve fully decoupling session TTL and certificate TTL, since scoped cert TTLs will need to
+	// be determined by non-role configuration, whereas specific resource access sessions may still be able to
+	// be controlled by roles.
+	return ttl
 }
 
-// MaxConnections returns the maximum number of concurrent ssh connections
-// allowed.  If MaxConnections is zero then no maximum was defined
-// and the number of concurrent connections is unconstrained.
-func (c *ScopedAccessChecker) MaxConnections() int64 {
-	// scoped roles do not currently support max connections, but we don't currently foresee
-	// issues with mirroring the classic role interface here since max connections is not
-	// certificate-bound and is not calculated pre-access-check.
-	return c.checker.MaxConnections()
+// PrivateKeyPolicy returns the private key policy to enforce for the certificate.
+func (n *CertificateParameterContext) PrivateKeyPolicy(defaultPolicy keys.PrivateKeyPolicy) (keys.PrivateKeyPolicy, error) {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.PrivateKeyPolicy(defaultPolicy)
+	}
+	// Scoped roles do not currently support custom private key policies. Return the cluster default.
+	// TODO(fspmarshall/scopes): determine what (if any) control should permit setting the private key
+	// policy for scoped certificates.
+	return defaultPolicy, nil
 }
 
-// MaxSessions returns the maximum number of concurrent ssh sessions
-// per connection.  If MaxSessions is zero then no maximum was defined
-// and the number of sessions is unconstrained.
-func (c *ScopedAccessChecker) MaxSessions() int64 {
-	// scoped roles do not currently support max sessions, but we don't currently foresee
-	// issues with mirroring the classic role interface here since max sessions is not
-	// certificate-bound and is not calculated pre-access-check.
-	return c.checker.MaxSessions()
+// PinSourceIP returns whether source IP pinning should be enabled in the certificate.
+func (n *CertificateParameterContext) PinSourceIP() bool {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.PinSourceIP()
+	}
+	// Scoped identities do not support source IP pinning due to scope isolation concerns.
+	// TODO(fspmarshall/scopes): determine what (if any) control should permit setting the source IP
+	// pinning for scoped certificates. Likely this will need to be a cluster configuration rather than
+	// a role-based setting.
+	return false
 }
 
-// CanCopyFiles returns true if the role set has enabled remote file
-// operations via SCP or SFTP.
-func (c *ScopedAccessChecker) CanCopyFiles() bool {
-	// scoped roles do not currently support remote file operations, but we don't currently foresee
-	// issues with mirroring the classic role interface here since remote file operation permission
-	// is not certificate-bound and is not calculated pre-access-check.
-	return c.checker.CanCopyFiles()
+// CanPortForward returns whether port forwarding should be permitted in the certificate.
+func (n *CertificateParameterContext) CanPortForward() bool {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.CanPortForward()
+	}
+	// Scoped identities: use unstable env var configuration
+	// TODO(fspmarshall/scopes): determine what (if any) control should permit setting the port forwarding
+	// permission for scoped certificates.
+	return scopedaccess.UnstableGetScopedPortForwarding()
 }
 
-// SSHPortForwardMode returns the SSHPortForwardMode.
-func (c *ScopedAccessChecker) SSHPortForwardMode() decisionpb.SSHPortForwardMode {
-	// scoped roles do not currently support port forwarding modes, but we don't currently foresee
-	// issues with mirroring the classic role interface here sine this method is not certificate-bound
-	// and is not calculated pre-access-check. note that due to the fact that the more general
-	// CanPortForward() method does affect certificate parameters, this method's behavior is currently
-	// determined by some hard-coding in ../scopes/access/compat.go. this method isn't currently useful
-	// as a result, but resolution of questions around the port forwarding certificate parameter will
-	// unblock this method.
-	return c.checker.SSHPortForwardMode()
+// CanForwardAgents returns whether agent forwarding should be permitted in the certificate.
+func (n *CertificateParameterContext) CanForwardAgents() bool {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.CanForwardAgents()
+	}
+	// Scoped identities: use unstable env var configuration
+	// TODO(fspmarshall/scopes): determine what (if any) control should permit setting the agent forwarding
+	// extension for scoped certificates.
+	return scopedaccess.UnstableGetScopedForwardAgent()
 }
 
-// AdjustClientIdleTimeout determines the client idle timeout to apply. The supplied argument must be the globally
-// defined most-permissive value. If the underlying scoped role specifies a more restrictive value, that value will
-// be returned, otherwise the globally defined value is returned unchanged.
-func (c *ScopedAccessChecker) AdjustClientIdleTimeout(timeout time.Duration) time.Duration {
-	// scoped client idle timeout calculation differs from classic roles, but only insofar as
-	// we don't support multi-role evaluation. since scope access checkers are always built from
-	// a single role anyway, we can defer to the classic implementation.
-	return c.checker.AdjustClientIdleTimeout(timeout)
+// PermitX11Forwarding returns whether X11 forwarding should be permitted in the certificate.
+func (n *CertificateParameterContext) PermitX11Forwarding() bool {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.PermitX11Forwarding()
+	}
+	// Scoped identities: hard-coded to false (no unstable env var for X11 forwarding)
+	// TODO(fspmarshall/scopes): determine what (if any) control should permit setting the X11 forwarding
+	// permission for scoped certificates.
+	return false
 }
 
-// AdjustDisconnectExpiredCert adjusts the value based on the role set
-// the most restrictive option will be picked
-func (c *ScopedAccessChecker) AdjustDisconnectExpiredCert(disconnect bool) bool {
-	// scoped roles do not currently support disconnect on expired certs, but we don't currently foresee
-	// issues with mirroring the classic role interface here since this method is not used to
-	// derive certificate parameters. *however*, there are some usages of this method that
-	// are not pre-access-check. This method can be used now for post-access-check adjustments,
-	// but further work will need to be done to determine how we want to handle disconnect on
-	// expired certs in the context of scoped roles. See ../scopes/access/compat.go for more
-	// discussion.
-	return c.checker.AdjustDisconnectExpiredCert(disconnect)
-}
-
-// SessionRecordingMode returns the recording mode for a specific service.
-func (c *ScopedAccessChecker) SessionRecordingMode(service constants.SessionRecordingService) constants.SessionRecordingMode {
-	// scoped roles do not currently support session recording modes, but we don't currently foresee
-	// issues with mirroring the classic role interface here since session recording mode is not
-	// certificate-bound and is not calculated pre-access-check.
-	return c.checker.SessionRecordingMode(service)
-}
-
-// CheckAccessToSSHServer checks access to an SSH server with optional role matchers. Note that this function
-// is a thin wrapper around the standard [AccessChecker.CheckAccess] method. The purpose of this method is to
-// provide a more constrained access-checking API since the majority of access-checkable resources are not
-// supported by scopes yet.
-func (c *ScopedAccessChecker) CheckAccessToSSHServer(target types.Server, state AccessState, osUser string) error {
-	return c.checker.CheckAccess(
-		target,
-		state,
-		NewLoginMatcher(osUser),
-	)
-}
-
-// CanAccessSSHServer is a helper method that checkes whether access to the specified SSH server is possible.
-// This method is used to determine read access to SSH servers, and does not take into account elements like
-// MFA state or os login. This helper is based on the behavior of auth.resourceChecker.CanAccess. The purpose
-// of this method is to provide a more constrained access-checking API since the majority of access-checkable
-// resources are not supported by scopes yet.
-func (c *ScopedAccessChecker) CanAccessSSHServer(target types.Server) error {
-	return c.checker.CheckAccess(target, AccessState{MFAVerified: true})
+// LockingMode returns the locking mode to apply for the certificate.
+func (n *CertificateParameterContext) LockingMode(defaultMode constants.LockingMode) constants.LockingMode {
+	if !n.ctx.isScoped() {
+		return n.ctx.unscopedChecker.LockingMode(defaultMode)
+	}
+	// Scoped roles do not currently support custom locking modes. Return the default/cluster mode.
+	// TODO(fspmarshall/scopes): determine how to handle locking mode for scoped certificates given that
+	// role-affected locking behavior during certificate creation doesn't map well to pinned certificates.
+	return defaultMode
 }
