@@ -423,6 +423,8 @@ type PingResponse struct {
 	Edition string `json:"edition"`
 	// FIPS represents if Teleport is using FIPS-compliant cryptography.
 	FIPS bool `json:"fips"`
+	// AuthServerScopesEnabled represents if scopes is enabled on the auth server.
+	AuthServerScopesEnabled *bool `json:"auth_server_scopes_enabled,omitempty"`
 }
 
 // PingErrorResponse contains the error from /webapi/ping.
@@ -564,8 +566,6 @@ type AuthenticationSettings struct {
 	// SignatureAlgorithmSuite is the configured signature algorithm suite for
 	// the cluster.
 	SignatureAlgorithmSuite types.SignatureAlgorithmSuite `json:"signature_algorithm_suite,omitempty"`
-	// ScopesEnabled determines if the TELEPORT_UNSTABLE_SCOPES env var is set to yes or not.
-	ScopesEnabled bool `json:"scopes_enabled"`
 }
 
 // LocalSettings holds settings for local authentication.

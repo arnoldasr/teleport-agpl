@@ -135,6 +135,7 @@ func (m *statusModel) renderText(w io.Writer, debug bool) error {
 	summaryTable := asciitable.MakeHeadlessTable(2)
 	summaryTable.AddRow([]string{"Cluster:", m.cluster.name})
 	summaryTable.AddRow([]string{"Version:", m.cluster.version})
+	summaryTable.AddRow([]string{"Auth Server Scopes enabled:", fmt.Sprintf("%t", m.cluster.scopesEnabled)})
 	for i, caPin := range m.cluster.caPins {
 		if i == 0 {
 			summaryTable.AddRow([]string{"CA pins:", caPin})
@@ -189,9 +190,10 @@ func sortRows(rows [][]string) {
 }
 
 type clusterStatusModel struct {
-	name    string
-	version string
-	caPins  []string
+	name          string
+	version       string
+	caPins        []string
+	scopesEnabled bool
 }
 
 func newClusterStatusModel(pingResp proto.PingResponse, authorities []types.CertAuthority) (*clusterStatusModel, error) {
@@ -210,9 +212,10 @@ func newClusterStatusModel(pingResp proto.PingResponse, authorities []types.Cert
 		}
 	}
 	return &clusterStatusModel{
-		name:    pingResp.ClusterName,
-		version: pingResp.ServerVersion,
-		caPins:  pins,
+		name:          pingResp.ClusterName,
+		version:       pingResp.ServerVersion,
+		caPins:        pins,
+		scopesEnabled: pingResp.ScopesEnabled,
 	}, nil
 }
 

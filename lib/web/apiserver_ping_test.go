@@ -257,13 +257,15 @@ func TestPing_scopesEnabled(t *testing.T) {
 			clt, err := client.NewWebClient(env.proxies[0].webURL.String(), roundtrip.HTTPClient(client.NewInsecureWebClient()))
 			require.NoError(t, err)
 
+			// /ping endpoint
 			resp, err := clt.Get(t.Context(), clt.Endpoint("webapi", "ping"), url.Values{})
 			require.NoError(t, err)
 			var pingResp webclient.PingResponse
 			require.NoError(t, json.Unmarshal(resp.Bytes(), &pingResp))
 
-			assert.Equal(t, test.expectEnabled, pingResp.Auth.ScopesEnabled)
 			assert.Equal(t, test.expectEnabled, pingResp.Proxy.ScopesEnabled)
+			require.NotNil(t, pingResp.AuthServerScopesEnabled)
+			assert.Equal(t, test.expectEnabled, *pingResp.AuthServerScopesEnabled)
 		})
 	}
 }

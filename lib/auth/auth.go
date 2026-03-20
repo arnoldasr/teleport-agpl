@@ -7533,6 +7533,7 @@ func (a *Server) Ping(ctx context.Context) (proto.PingResponse, error) {
 		LoadAllCAs:              a.loadAllCAs,
 		SignatureAlgorithmSuite: authPref.GetSignatureAlgorithmSuite(),
 		LicenseExpiry:           &licenseExpiry,
+		ScopesEnabled:           scopes.FeatureEnabled(),
 	}, nil
 }
 

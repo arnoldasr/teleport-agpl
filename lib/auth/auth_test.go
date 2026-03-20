@@ -4790,6 +4790,44 @@ func testCreateAccessListReminderNotifications(t *testing.T) {
 		"notifications should not have changed after second reconciliation")
 }
 
+func TestPing(t *testing.T) {
+	type fixture struct {
+		name          string
+		scopesEnabled bool
+		envVarSet     func(t *testing.T)
+	}
+	fixtures := []fixture{
+		{
+			name:          "scopes disabled",
+			scopesEnabled: false,
+			envVarSet: func(t *testing.T) {
+				t.Setenv("TELEPORT_UNSTABLE_SCOPES", "")
+			},
+		},
+		{
+			name:          "scopes enabled",
+			scopesEnabled: true,
+			envVarSet: func(t *testing.T) {
+				t.Setenv("TELEPORT_UNSTABLE_SCOPES", "yes")
+			},
+		},
+	}
+
+	for _, f := range fixtures {
+		t.Run(f.name, func(t *testing.T) {
+			f.envVarSet(t)
+			s := newAuthSuite(t)
+			resp, err := s.a.Ping(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, "test.localhost", resp.ClusterName)
+			assert.Equal(t, teleport.Version, resp.ServerVersion)
+			assert.NotNil(t, resp.ServerFeatures)
+			assert.NotNil(t, resp.LicenseExpiry)
+			assert.Equal(t, f.scopesEnabled, resp.ScopesEnabled)
+		})
+	}
+}
+
 type createAccessListOptions struct {
 	typ           accesslist.Type
 	nextAuditDate time.Time
