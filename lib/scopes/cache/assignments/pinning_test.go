@@ -427,20 +427,10 @@ func TestPopulatePinnedAssignmentsForBot(t *testing.T) {
 			ok: true,
 			expect: &scopesv1.Pin{
 				Scope: bernardScope,
-				Assignments: map[string]*scopesv1.PinnedAssignments{
-					bernardScope: {
-						Roles: []string{
-							"role-01",
-							"role-03", // assigned from root scope
-						},
-					},
-					bernardScope + "/child": {
-						Roles: []string{
-							"role-02",
-							"role-04", // assigned from root scope
-						},
-					},
-				},
+				AssignmentTree: pinning.AssignmentTreeFromMap(map[string]map[string][]string{
+					"/":          {bernardScope: {"role-03"}, bernardScope + "/child": {"role-04"}},
+					bernardScope: {bernardScope: {"role-01"}, bernardScope + "/child": {"role-02"}},
+				}),
 			},
 		},
 	}
