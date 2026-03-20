@@ -232,6 +232,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 					ChallengeExtensions: &mfatypes.ChallengeExtensions{
 						Scope: mfav1.ChallengeScope_CHALLENGE_SCOPE_LOGIN,
 					},
+					Payload: &mfatypes.SessionIdentifyingPayload{},
 				}, sd)
 			},
 		},
