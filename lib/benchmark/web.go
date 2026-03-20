@@ -288,6 +288,7 @@ func connectToHost(ctx context.Context, tc *client.TeleportClient, webSession *w
 	}
 
 	if err := tokenExchange(ws, webSession.getToken()); err != nil {
+		ws.Close() // clean up the websocket since we do not pass it to a Stream.
 		return nil, trace.Wrap(err, "performing token exchange")
 	}
 
