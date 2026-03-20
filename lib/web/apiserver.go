@@ -102,6 +102,7 @@ import (
 	"github.com/gravitational/teleport/lib/plugin"
 	"github.com/gravitational/teleport/lib/proxy"
 	"github.com/gravitational/teleport/lib/reversetunnelclient"
+	"github.com/gravitational/teleport/lib/scopes"
 	"github.com/gravitational/teleport/lib/secret"
 	"github.com/gravitational/teleport/lib/services"
 	"github.com/gravitational/teleport/lib/services/readonly"
@@ -1445,6 +1446,7 @@ func localSettings(ctx context.Context, cap types.AuthPreference, m modules.Modu
 		PIVPINCacheTTL:          cap.GetPIVPINCacheTTL(),
 		DeviceTrust:             deviceTrustSettings(cap, m),
 		SignatureAlgorithmSuite: cap.GetSignatureAlgorithmSuite(),
+		ScopesEnabled:           scopes.FeatureEnabled(),
 	}
 
 	// Only copy the connector name if it's truly local and not a local fallback.
@@ -1489,6 +1491,7 @@ func oidcSettings(connector types.OIDCConnector, cap types.AuthPreference, m mod
 		PIVPINCacheTTL:          cap.GetPIVPINCacheTTL(),
 		DeviceTrust:             deviceTrustSettings(cap, m),
 		SignatureAlgorithmSuite: cap.GetSignatureAlgorithmSuite(),
+		ScopesEnabled:           scopes.FeatureEnabled(),
 	}
 }
 
@@ -1512,6 +1515,7 @@ func samlSettings(connector types.SAMLConnector, cap types.AuthPreference, m mod
 		PIVPINCacheTTL:          cap.GetPIVPINCacheTTL(),
 		DeviceTrust:             deviceTrustSettings(cap, m),
 		SignatureAlgorithmSuite: cap.GetSignatureAlgorithmSuite(),
+		ScopesEnabled:           scopes.FeatureEnabled(),
 	}
 }
 
@@ -1531,6 +1535,7 @@ func githubSettings(connector types.GithubConnector, cap types.AuthPreference, m
 		PIVPINCacheTTL:          cap.GetPIVPINCacheTTL(),
 		DeviceTrust:             deviceTrustSettings(cap, m),
 		SignatureAlgorithmSuite: cap.GetSignatureAlgorithmSuite(),
+		ScopesEnabled:           scopes.FeatureEnabled(),
 	}
 }
 

@@ -446,6 +446,8 @@ type ProxySettings struct {
 	// TLSRoutingEnabled indicates that proxy supports ALPN SNI server where
 	// all proxy services are exposed on a single TLS listener (Proxy Web Listener).
 	TLSRoutingEnabled bool `json:"tls_routing_enabled"`
+	// ScopesEnabled determines if the TELEPORT_UNSTABLE_SCOPES env var is set to yes or not.
+	ScopesEnabled bool `json:"scopes_enabled"`
 }
 
 // AutoUpdateSettings contains information about the auto update requirements.
@@ -562,6 +564,8 @@ type AuthenticationSettings struct {
 	// SignatureAlgorithmSuite is the configured signature algorithm suite for
 	// the cluster.
 	SignatureAlgorithmSuite types.SignatureAlgorithmSuite `json:"signature_algorithm_suite,omitempty"`
+	// ScopesEnabled determines if the TELEPORT_UNSTABLE_SCOPES env var is set to yes or not.
+	ScopesEnabled bool `json:"scopes_enabled"`
 }
 
 // LocalSettings holds settings for local authentication.
