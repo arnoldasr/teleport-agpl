@@ -4794,28 +4794,24 @@ func TestPing(t *testing.T) {
 	type fixture struct {
 		name          string
 		scopesEnabled bool
-		envVarSet     func(t *testing.T)
+		envVar        string
 	}
 	fixtures := []fixture{
 		{
 			name:          "scopes disabled",
 			scopesEnabled: false,
-			envVarSet: func(t *testing.T) {
-				t.Setenv("TELEPORT_UNSTABLE_SCOPES", "")
-			},
+			envVar:        "",
 		},
 		{
 			name:          "scopes enabled",
 			scopesEnabled: true,
-			envVarSet: func(t *testing.T) {
-				t.Setenv("TELEPORT_UNSTABLE_SCOPES", "yes")
-			},
+			envVar:        "yes",
 		},
 	}
 
 	for _, f := range fixtures {
 		t.Run(f.name, func(t *testing.T) {
-			f.envVarSet(t)
+			t.Setenv("TELEPORT_UNSTABLE_SCOPES", f.envVar)
 			s := newAuthSuite(t)
 			resp, err := s.a.Ping(t.Context())
 			require.NoError(t, err)

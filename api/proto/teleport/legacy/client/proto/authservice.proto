@@ -520,7 +520,7 @@ message PingResponse {
     (gogoproto.jsontag) = "licenseExpiry"
   ];
   // ScopesEnabled determines if the scope feature is enabled or not with the TELEPORT_UNSTABLE_SCOPES env var
-  bool ScopesEnabled = 11 [(gogoproto.jsontag) = "scopes_enabled"];
+  bool scopes_enabled = 11;
 }
 
 // ProductType is the type of product.
