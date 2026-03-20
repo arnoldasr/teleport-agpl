@@ -121,7 +121,8 @@ type sharedStartArgs struct {
 
 	// Scoped indicates if the user expects this instance of tbot to interact
 	// with a scoped Bot.
-	Scoped bool
+	Scoped          bool
+	scopedSetByUser bool
 
 	Oneshot              bool
 	DiagAddr             string
@@ -154,7 +155,7 @@ func newSharedStartArgs(cmd *kingpin.CmdClause) *sharedStartArgs {
 	cmd.Flag("join-uri", "An optional URI with joining and authentication parameters. Individual flags for proxy, join method, token, etc may be used instead.").StringVar(&args.JoiningURI)
 	cmd.Flag("diag-socket-for-updater", "If set, run the diagnostics service on the specified socket path for teleport-update to consume.").Hidden().StringVar(&args.DiagSocketForUpdater)
 	cmd.Flag("pid-file", "Full path to the PID file. By default no PID file will be created.").StringVar(&args.PIDFile)
-	cmd.Flag("scoped", "Indicates whether tbot should run in scoped mode. This is required when authenticating as a scoped Bot.").BoolVar(&args.Scoped)
+	cmd.Flag("scoped", "Indicates whether tbot should run in scoped mode. This is required when authenticating as a scoped Bot.").IsSetByUser(&args.scopedSetByUser).BoolVar(&args.Scoped)
 
 	return args
 }
@@ -174,6 +175,10 @@ func (s *sharedStartArgs) ApplyConfig(cfg *config.BotConfig, l *slog.Logger) err
 
 	if s.oneshotSetByUser {
 		cfg.Oneshot = s.Oneshot
+	}
+
+	if s.scopedSetByUser {
+		cfg.Scoped = s.Scoped
 	}
 
 	if s.CertificateTTL != 0 {
