@@ -715,7 +715,7 @@ func TestSSOMFAChallenge_Validation(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			if tt.sd != nil {
-				err := a.UpsertSSOMFASessionData(ctx, tt.sd)
+				err := a.UpsertMFASessionData(ctx, tt.sd)
 				require.NoError(t, err)
 			}
 

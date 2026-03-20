@@ -8173,9 +8173,9 @@ func groupByDeviceType(devs []*types.MFADevice) devicesByType {
 		}
 	}
 
-	// Create a synthetic Browser device if the user has WebAuthn devices but no SSO device.
+	// Create a synthetic Browser device if the user has a WebAuthn device.
 	// This enables browser-based MFA for users who have WebAuthn/passkey devices.
-	if res.SSO == nil && len(res.Webauthn) > 0 {
+	if len(res.Webauthn) > 0 {
 		res.Browser = &types.MFADevice{
 			Id: "browser",
 			Device: &types.MFADevice_Browser{

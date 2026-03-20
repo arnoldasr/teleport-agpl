@@ -1943,7 +1943,7 @@ func (s *IdentityService) GetSSODiagnosticInfo(ctx context.Context, authKind str
 	return &req, nil
 }
 
-func (s *IdentityService) UpsertSSOMFASessionData(ctx context.Context, sd *services.MFASessionData) error {
+func (s *IdentityService) UpsertMFASessionData(ctx context.Context, sd *services.MFASessionData) error {
 	switch {
 	case sd == nil:
 		return trace.BadParameter("missing parameter sd")

@@ -1759,7 +1759,7 @@ func TestIdentityService_SSOMFASessionDataCRUD(t *testing.T) {
 		ConnectorID:   "saml",
 		ConnectorType: "saml",
 	}
-	err := identity.UpsertSSOMFASessionData(ctx, sd)
+	err := identity.UpsertMFASessionData(ctx, sd)
 	require.NoError(t, err)
 
 	// Verify read.
@@ -1771,7 +1771,7 @@ func TestIdentityService_SSOMFASessionDataCRUD(t *testing.T) {
 
 	// Verify update.
 	sd.Token = "token"
-	err = identity.UpsertSSOMFASessionData(ctx, sd)
+	err = identity.UpsertMFASessionData(ctx, sd)
 	require.NoError(t, err)
 	got, err = identity.GetSSOMFASessionData(ctx, sd.RequestID)
 	require.NoError(t, err)

@@ -26,10 +26,11 @@ import (
 	"github.com/gravitational/teleport/api/constants"
 	"github.com/gravitational/teleport/lib/auth/mfatypes"
 	"github.com/gravitational/teleport/lib/client/sso"
+	"github.com/gravitational/teleport/lib/services"
 )
 
 // BeginBrowserMFAChallenge creates a new Browser MFA auth request and session
-// data for the given which is stored in the backend.
+// data for the given params and stores it in the backend.
 func (a *Server) BeginBrowserMFAChallenge(ctx context.Context, params mfatypes.BeginBrowserMFAChallengeParams) (*proto.BrowserMFAChallenge, error) {
 	if err := sso.ValidateClientRedirect(params.BrowserMFATSHRedirectURL, sso.CeremonyTypeMFA, nil); err != nil {
 		return nil, trace.Wrap(err, InvalidClientRedirectErrorMessage)
@@ -40,17 +41,24 @@ func (a *Server) BeginBrowserMFAChallenge(ctx context.Context, params mfatypes.B
 		RequestId: requestID,
 	}
 
-	if err := a.upsertMFASession(ctx, upsertMFASessionParams{
-		user:           params.User,
-		sessionID:      requestID,
-		connectorID:    constants.BrowserMFA,
-		connectorType:  constants.BrowserMFA,
-		tshRedirectURL: params.BrowserMFATSHRedirectURL,
-		ext:            params.Ext,
-		sip:            params.SIP,
-		sourceCluster:  params.SourceCluster,
-		targetCluster:  params.TargetCluster,
-	}); err != nil {
+	sessionData := &services.MFASessionData{
+		Username:       params.User,
+		RequestID:      requestID,
+		ConnectorID:    constants.BrowserMFA,
+		ConnectorType:  constants.BrowserMFA,
+		TSHRedirectURL: params.BrowserMFATSHRedirectURL,
+		ChallengeExtensions: &mfatypes.ChallengeExtensions{
+			Scope:      params.Ext.Scope,
+			AllowReuse: params.Ext.AllowReuse,
+		},
+		SourceCluster: params.SourceCluster,
+		TargetCluster: params.TargetCluster,
+		Payload: &mfatypes.SessionIdentifyingPayload{
+			SSHSessionID: params.SIP.GetSshSessionId(),
+		},
+	}
+
+	if err := a.UpsertMFASessionData(ctx, sessionData); err != nil {
 		return nil, trace.Wrap(err)
 	}
 
