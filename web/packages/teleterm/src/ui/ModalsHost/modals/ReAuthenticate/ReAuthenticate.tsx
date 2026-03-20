@@ -54,9 +54,10 @@ export const ReAuthenticate: FC<{
   onCancel: () => void;
   onOtpSubmit: (otp: string) => void;
   onSsoContinue: (redirectUrl: string) => void;
+  onBrowserMfaContinue: (redirectUrl: string) => void;
   hidden?: boolean;
 }> = props => {
-  const { promptMfaRequest: req, onSsoContinue } = props;
+  const { promptMfaRequest: req, onSsoContinue, onBrowserMfaContinue } = props;
 
   const availableMfaTypes = makeAvailableMfaTypes(req);
 
@@ -89,6 +90,19 @@ export const ReAuthenticate: FC<{
     rootCluster?.proxyHost || rootClusterName;
   const clusterName = routing.parseClusterName(clusterUri);
   const isLeafCluster = routing.isLeafCluster(clusterUri);
+
+  useEffect(() => {
+    if (selectedMfaType.value === 'browsermfa' && req.browser?.requestId) {
+      onBrowserMfaContinue(
+        `https://${rootClusterProxyHost}/web/mfa/browser/${req.browser.requestId}`
+      );
+    }
+  }, [
+    selectedMfaType.value,
+    req.browser?.requestId,
+    onBrowserMfaContinue,
+    rootClusterProxyHost,
+  ]);
 
   let $totpPrompt = (
     <FieldInput
@@ -207,6 +221,15 @@ export const ReAuthenticate: FC<{
                 {selectedMfaType.value === 'sso' && (
                   <PromptSsoStatus ssoPrompt="follow-browser-steps" />
                 )}
+
+                {selectedMfaType.value === 'browsermfa' && (
+                  <Box width="100%" style={{ position: 'relative' }}>
+                    <Text bold>
+                      Please follow the steps in the browser to authenticate.
+                    </Text>
+                    <LinearProgress />
+                  </Box>
+                )}
               </Flex>
             </DialogContent>
 
@@ -233,11 +256,12 @@ export const ReAuthenticate: FC<{
   );
 };
 
-type MfaType = 'webauthn' | 'totp' | 'sso';
+type MfaType = 'webauthn' | 'totp' | 'sso' | 'browsermfa';
 type AvailableMfaType = Option<MfaType, string>;
 
 const totp = { value: 'totp' as MfaType, label: 'Authenticator App' };
 const webauthn = { value: 'webauthn' as MfaType, label: 'Hardware Key' };
+const browsermfa = { value: 'browsermfa' as MfaType, label: 'Browser MFA' };
 
 function makeAvailableMfaTypes(req: PromptMFARequest): AvailableMfaType[] {
   let availableMfaTypes: AvailableMfaType[] = [];
@@ -255,6 +279,10 @@ function makeAvailableMfaTypes(req: PromptMFARequest): AvailableMfaType[] {
       value: 'sso',
       label: req.sso.displayName || req.sso.connectorId,
     });
+  }
+
+  if (req.browser) {
+    availableMfaTypes.push(browsermfa);
   }
 
   // This shouldn't happen but is technically allowed by the req data structure.

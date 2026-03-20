@@ -38,8 +38,8 @@ type Ceremony struct {
 	MFACeremonyConstructor MFACeremonyConstructor
 }
 
-// SSOMFACeremony is an SSO MFA ceremony.
-type SSOMFACeremony interface {
+// MFACeremony is an SSO/Browser MFA ceremony.
+type MFACeremony interface {
 	GetClientCallbackURL() string
 	GetProxyAddress() string
 	Run(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error)
@@ -47,7 +47,7 @@ type SSOMFACeremony interface {
 }
 
 // MFACeremonyConstructor constructs a new SSO or Browser MFA ceremony.
-type MFACeremonyConstructor func(ctx context.Context) (SSOMFACeremony, error)
+type MFACeremonyConstructor func(ctx context.Context) (MFACeremony, error)
 
 // CreateAuthenticateChallengeFunc is a function that creates an authentication challenge.
 type CreateAuthenticateChallengeFunc func(ctx context.Context, req *proto.CreateAuthenticateChallengeRequest) (*proto.MFAAuthenticateChallenge, error)

@@ -167,7 +167,7 @@ func TestMFACeremony_SSO(t *testing.T) {
 				return cfg.MFACeremony.Run(ctx, chal)
 			})
 		},
-		MFACeremonyConstructor: func(ctx context.Context) (mfa.SSOMFACeremony, error) {
+		MFACeremonyConstructor: func(ctx context.Context) (mfa.MFACeremony, error) {
 			return &mockMFACeremony{
 				clientCallbackURL: "client-redirect",
 				prompt: func(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {
@@ -222,7 +222,7 @@ func TestMFACeremony_BrowserMFA(t *testing.T) {
 				return cfg.MFACeremony.Run(ctx, chal)
 			})
 		},
-		MFACeremonyConstructor: func(ctx context.Context) (mfa.SSOMFACeremony, error) {
+		MFACeremonyConstructor: func(ctx context.Context) (mfa.MFACeremony, error) {
 			return &mockMFACeremony{
 				clientCallbackURL: "client-redirect",
 				prompt: func(ctx context.Context, chal *proto.MFAAuthenticateChallenge) (*proto.MFAAuthenticateResponse, error) {

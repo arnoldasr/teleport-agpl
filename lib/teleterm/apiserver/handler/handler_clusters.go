@@ -98,10 +98,18 @@ func (s *Handler) ClearStaleClusterClients(_ context.Context, req *api.ClearStal
 func newAPIRootCluster(cluster *clusters.Cluster) *api.Cluster {
 	loggedInUser := cluster.GetLoggedInUser()
 
+	// Get the proxy host, fallback to WebProxyAddr if it isn't set yet.
+	// This helps in situations where the user isn't logged in yet and not
+	// all info is available.
+	proxyHost := cluster.GetProxyHost()
+	if proxyHost == "" {
+		proxyHost = cluster.WebProxyAddr
+	}
+
 	apiCluster := &api.Cluster{
 		Uri:       cluster.URI.String(),
 		Name:      cluster.Name,
-		ProxyHost: cluster.GetProxyHost(),
+		ProxyHost: proxyHost,
 		Connected: cluster.Connected(),
 		LoggedInUser: &api.LoggedInUser{
 			Name:            loggedInUser.Name,
