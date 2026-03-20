@@ -400,7 +400,12 @@ func (s *WebSessionBenchmark) BenchBuilder(ctx context.Context, tc *client.Telep
 	// Open a ssh session to the next host if the maximum
 	// number of connections has not already been reached.
 	return func(ctx context.Context) error {
-		sem <- struct{}{}
+		select {
+		case sem <- struct{}{}:
+		case <-ctx.Done():
+			return nil
+		}
+
 		defer func() { <-sem }()
 
 		mu.Lock()
