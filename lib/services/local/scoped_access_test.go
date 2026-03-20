@@ -20,7 +20,7 @@ package local
 
 import (
 	"testing"
-	"time"
+	"testing/synctest"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
@@ -42,7 +42,10 @@ import (
 // TestScopedRoleEvents verifies the expected behavior of backend events for the ScopedRole family of types.
 func TestScopedRoleEvents(t *testing.T) {
 	t.Parallel()
+	synctest.Test(t, testScopedRoleEvents)
+}
 
+func testScopedRoleEvents(t *testing.T) {
 	ctx := t.Context()
 
 	backend, err := memory.New(memory.Config{
@@ -71,13 +74,14 @@ func TestScopedRoleEvents(t *testing.T) {
 
 	getNextEvent := func() types.Event {
 		t.Helper()
+		synctest.Wait()
 		select {
 		case event := <-watcher.Events():
 			return event
 		case <-watcher.Done():
 			require.FailNow(t, "Watcher exited with error", watcher.Error())
-		case <-time.After(time.Second * 5):
-			require.FailNow(t, "Timeout waiting for event", watcher.Error())
+		default:
+			require.FailNow(t, "No event ready, synctest bubble is durably blocked")
 		}
 
 		panic("unreachable")
@@ -183,6 +187,21 @@ func TestScopedRoleEvents(t *testing.T) {
 			Name: assignment.Metadata.Name,
 		},
 	}, event.Resource.(*types.ResourceHeader), protocmp.Transform()))
+
+	// Assert that any materialized assignments put into the backend (possibly
+	// by an auth service on a later version) don't make it into the event
+	// stream. Use the backend directly to skip subkind validation.
+	assignment.SubKind = scopedaccess.SubKindMaterialized
+	item, err := scopedRoleAssignmentToItem(assignment)
+	require.NoError(t, err)
+	_, err = service.bk.Put(ctx, item)
+	require.NoError(t, err)
+	synctest.Wait()
+	select {
+	case evt := <-watcher.Events():
+		t.Fatalf("expected no event, got %v", evt)
+	default:
+	}
 }
 
 // TestScopedRoleBasicCRUD tests the basic CRUD operations of the ScopedAccessService, excluding the more non-trivial
