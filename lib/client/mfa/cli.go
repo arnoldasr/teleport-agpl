@@ -342,8 +342,8 @@ func (c *CLIPrompt) promptWithFallback(ctx context.Context, chal *proto.MFAAuthe
 			"user_specified", userSpecifiedMethod,
 		)
 
-		// If the user explicitly specified this MFA method, fail now without fallback.
-		if userSpecifiedMethod {
+		// Don't fall back if the user explicitly chose this method or canceled.
+		if userSpecifiedMethod || ctx.Err() != nil {
 			return nil, trace.Wrap(err)
 		}
 
