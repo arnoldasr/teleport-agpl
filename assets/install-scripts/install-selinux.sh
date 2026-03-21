@@ -60,5 +60,8 @@ while IFS= read -r dir; do
     restorecon -rv "${dir}"
 done <<< "$DIRS"
 
+# Label the Teleport binary
+restorecon -v "${TELEPORT}"
+
 popd
 rm -rf "${WORK_DIR}"

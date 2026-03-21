@@ -221,17 +221,15 @@ allow teleport_ssh_t wtmp_t:file rw_file_perms;
 allow teleport_ssh_t lastlog_t:file read_file_perms;
 
 # enhanced session recording
-allow teleport_ssh_t cgroup_t:filesystem { mount unmount };
-allow teleport_ssh_t cgroup_t:dir manage_dir_perms;
-allow teleport_ssh_t default_t:dir mounton;
 allow teleport_ssh_t self:bpf { map_create map_read map_write prog_load prog_run };
-allow teleport_ssh_t self:perf_event { cpu kernel open write };
+allow teleport_ssh_t sysfs_t:file map;
+allow teleport_ssh_t tracefs_t:filesystem getattr;
 allow teleport_ssh_t tracefs_t:file read_file_perms;
-allow teleport_ssh_t root_t:dir { add_name create mounton write };
+allow teleport_ssh_t self:perf_event { cpu kernel open tracepoint write };
 allow teleport_ssh_t self:capability sys_admin;
 # not available on RHEL 8
 optional_policy(`
-    require { 
+    require {
         class capability2 { bpf perfmon };
     };
     allow teleport_ssh_t self:capability2 { bpf perfmon };
