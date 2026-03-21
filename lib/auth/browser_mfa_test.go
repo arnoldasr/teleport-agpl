@@ -17,7 +17,6 @@
 package auth_test
 
 import (
-	"context"
 	"testing"
 
 	"github.com/jonboulle/clockwork"
@@ -34,7 +33,7 @@ import (
 	"github.com/gravitational/teleport/lib/services"
 )
 
-const redirectURL = "http://localhost:3080/callback?secret_key=test-key"
+const browserMFARedirectURL = "http://localhost:12345/callback?secret_key=test-key"
 
 type testEnv struct {
 	server       *authtest.Server
@@ -42,6 +41,7 @@ type testEnv struct {
 	clock        *clockwork.FakeClock
 	authPref     types.AuthPreference
 	webauthnUser types.User
+	webauthnDev  *types.MFADevice
 }
 
 func newBrowserMFATestEnv(t *testing.T) testEnv {
@@ -106,12 +106,13 @@ func newBrowserMFATestEnv(t *testing.T) testEnv {
 		clock:        fakeClock,
 		authPref:     authPref,
 		webauthnUser: webauthnUser,
+		webauthnDev:  webauthnDev,
 	}
 }
 
 func TestBrowserMFAChallengeCreation(t *testing.T) {
 	t.Parallel()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	env := newBrowserMFATestEnv(t)
 	a := env.auth
@@ -120,8 +121,15 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 	standardUser, _, err := authtest.CreateUserAndRole(a, "standard", []string{"role"}, nil)
 	require.NoError(t, err)
 
-	// Create a fake SAML user with SSO MFA enabled (shouldn't get Browser MFA challenge).
+	// Create a fake SAML user with SSO MFA enabled who shouldn't get Browser MFA challenge
+	// because they don't have webauthn
 	samlUser, samlRole, err := authtest.CreateUserAndRole(a, "saml-user", []string{"role"}, nil)
+	require.NoError(t, err)
+
+	// Create a fake SAML user with SSO MFA enabled and a webauthn device, who will get Browser MFA
+	samlUserWithWebauthn, samlWebauthnRole, err := authtest.CreateUserAndRole(a, "saml-webauthn-user", []string{"role"}, nil)
+	require.NoError(t, err)
+	err = a.UpsertMFADevice(ctx, samlUserWithWebauthn.GetName(), env.webauthnDev)
 	require.NoError(t, err)
 
 	samlConnector, err := types.NewSAMLConnector("saml", types.SAMLConnectorSpecV2{
@@ -129,7 +137,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 		Issuer:                   "test",
 		SSO:                      "https://localhost:65535/sso",
 		AttributesToRoles: []types.AttributeMapping{
-			{Name: "groups", Value: "admin", Roles: []string{samlRole.GetName()}},
+			{Name: "groups", Value: "admin", Roles: []string{samlRole.GetName(), samlWebauthnRole.GetName()}},
 		},
 		MFASettings: &types.SAMLConnectorMFASettings{
 			Enabled: true,
@@ -158,7 +166,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 			username: standardUser.GetName(),
 			challengeRequest: &proto.CreateAuthenticateChallengeRequest{
 				ChallengeExtensions:      loginExt,
-				BrowserMFATSHRedirectURL: redirectURL,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
 				assert.Nil(t, chal.BrowserMFAChallenge, "should not return Browser MFA challenge for user without WebAuthn devices")
@@ -180,7 +188,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 			username: env.webauthnUser.GetName(),
 			challengeRequest: &proto.CreateAuthenticateChallengeRequest{
 				ChallengeExtensions:      loginExt,
-				BrowserMFATSHRedirectURL: redirectURL,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			setup: func(t *testing.T) {
 				// Disable Browser authentication.
@@ -198,14 +206,40 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 			},
 		},
 		{
-			name:     "NOK SSO MFA user should not get Browser MFA",
+			name:     "NOK SSO MFA user without webauthn should not get Browser MFA",
 			username: samlUser.GetName(),
 			challengeRequest: &proto.CreateAuthenticateChallengeRequest{
 				ChallengeExtensions:      loginExt,
-				BrowserMFATSHRedirectURL: redirectURL,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
-				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge")
+				assert.Nil(t, chal.BrowserMFAChallenge, "SSO MFA users should not get Browser MFA challenge when webauthn not available")
+			},
+		},
+		{
+			name:     "OK SSO MFA user gets Browser MFA when webauthn available",
+			username: samlUserWithWebauthn.GetName(),
+			challengeRequest: &proto.CreateAuthenticateChallengeRequest{
+				ChallengeExtensions:      loginExt,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
+			},
+			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
+				assert.NotNil(t, chal.BrowserMFAChallenge, "expected Browser MFA challenge to be returned")
+				assert.NotEmpty(t, chal.BrowserMFAChallenge.RequestId, "request ID should be generated")
+
+				sd, err := a.GetSSOMFASessionData(ctx, chal.BrowserMFAChallenge.RequestId)
+				require.NoError(t, err)
+				assert.Equal(t, &services.MFASessionData{
+					RequestID:      chal.BrowserMFAChallenge.RequestId,
+					Username:       samlUserWithWebauthn.GetName(),
+					ConnectorID:    constants.BrowserMFA,
+					ConnectorType:  constants.BrowserMFA,
+					TSHRedirectURL: browserMFARedirectURL,
+					ChallengeExtensions: &mfatypes.ChallengeExtensions{
+						Scope: mfav1.ChallengeScope_CHALLENGE_SCOPE_LOGIN,
+					},
+					Payload: &mfatypes.SessionIdentifyingPayload{},
+				}, sd)
 			},
 		},
 		{
@@ -213,7 +247,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 			username: env.webauthnUser.GetName(),
 			challengeRequest: &proto.CreateAuthenticateChallengeRequest{
 				ChallengeExtensions:      loginExt,
-				BrowserMFATSHRedirectURL: redirectURL,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
 				require.NotNil(t, chal.BrowserMFAChallenge, "expected Browser MFA challenge to be returned")
@@ -228,7 +262,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 					Username:       env.webauthnUser.GetName(),
 					ConnectorID:    constants.BrowserMFA,
 					ConnectorType:  constants.BrowserMFA,
-					TSHRedirectURL: redirectURL,
+					TSHRedirectURL: browserMFARedirectURL,
 					ChallengeExtensions: &mfatypes.ChallengeExtensions{
 						Scope: mfav1.ChallengeScope_CHALLENGE_SCOPE_LOGIN,
 					},
@@ -244,7 +278,7 @@ func TestBrowserMFAChallengeCreation(t *testing.T) {
 					Scope:      mfav1.ChallengeScope_CHALLENGE_SCOPE_USER_SESSION,
 					AllowReuse: mfav1.ChallengeAllowReuse_CHALLENGE_ALLOW_REUSE_YES,
 				},
-				BrowserMFATSHRedirectURL: redirectURL,
+				BrowserMFATSHRedirectURL: browserMFARedirectURL,
 			},
 			assertChallenge: func(t *testing.T, chal *proto.MFAAuthenticateChallenge) {
 				require.NotNil(t, chal.BrowserMFAChallenge, "expected Browser MFA challenge to be returned")

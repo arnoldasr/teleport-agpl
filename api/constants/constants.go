@@ -67,7 +67,7 @@ const (
 	// Github means authentication will happen remotely using a Github connector.
 	Github = "github"
 
-	// Browser means authentication will happen in a browser for MFA.
+	// BrowserMFA is for CLI flows that delegate MFA to the browser.
 	BrowserMFA = "browser_mfa"
 
 	// HumanDateFormatSeconds is a human readable date formatting with seconds

@@ -4461,7 +4461,14 @@ func (a *Server) CreateAuthenticateChallenge(ctx context.Context, req *proto.Cre
 		}
 	}
 
-	challenges, err := a.mfaAuthChallenge(ctx, username, req.SSOClientRedirectURL, req.BrowserMFATSHRedirectURL, req.ProxyAddress, challengeExtensions)
+	// Both SSO and Browser MFA redirect URLs point to the same callback server on tsh.
+	// So we can take either one and generate an auth challenge with it.
+	clientRedirectURL := req.SSOClientRedirectURL
+	if clientRedirectURL == "" {
+		clientRedirectURL = req.BrowserMFATSHRedirectURL
+	}
+
+	challenges, err := a.mfaAuthChallenge(ctx, username, clientRedirectURL, req.ProxyAddress, challengeExtensions)
 	if err != nil {
 		// Do not obfuscate config-related errors.
 		if errors.Is(err, types.ErrPasswordlessRequiresWebauthn) || errors.Is(err, types.ErrPasswordlessDisabledBySettings) {
@@ -7988,7 +7995,7 @@ func (a *Server) isMFARequired(ctx context.Context, checker services.AccessCheck
 
 // mfaAuthChallenge constructs an MFAAuthenticateChallenge for all MFA devices
 // registered by the user.
-func (a *Server) mfaAuthChallenge(ctx context.Context, user, ssoClientRedirectURL, browserMFATSHRedirectURL, proxyAddress string, challengeExtensions *mfav1.ChallengeExtensions) (*proto.MFAAuthenticateChallenge, error) {
+func (a *Server) mfaAuthChallenge(ctx context.Context, user, clientRedirectURL, proxyAddress string, challengeExtensions *mfav1.ChallengeExtensions) (*proto.MFAAuthenticateChallenge, error) {
 	isPasswordless := challengeExtensions.Scope == mfav1.ChallengeScope_CHALLENGE_SCOPE_PASSWORDLESS_LOGIN
 
 	// Check what kind of MFA is enabled.
@@ -8095,13 +8102,13 @@ func (a *Server) mfaAuthChallenge(ctx context.Context, user, ssoClientRedirectUR
 
 	// If the user has an SSO device and the client provided a redirect URL to handle
 	// the MFA SSO flow, create an SSO challenge.
-	if enableSSO && groupedDevs.SSO != nil && ssoClientRedirectURL != "" {
+	if enableSSO && groupedDevs.SSO != nil && clientRedirectURL != "" {
 		if challenge.SSOChallenge, err = a.BeginSSOMFAChallenge(
 			ctx,
 			mfatypes.BeginSSOMFAChallengeParams{
 				User:                 user,
 				SSO:                  groupedDevs.SSO.GetSso(),
-				SSOClientRedirectURL: ssoClientRedirectURL,
+				SSOClientRedirectURL: clientRedirectURL,
 				ProxyAddress:         proxyAddress,
 				Ext:                  challengeExtensions,
 			},
@@ -8110,15 +8117,15 @@ func (a *Server) mfaAuthChallenge(ctx context.Context, user, ssoClientRedirectUR
 		}
 	}
 
-	// If the user has a WebAuthn device and no SSO MFA configured, return a Browser
-	// MFA challenge. This challenge is useful in cases where a user only has a
-	// browser-associated WebAuthn device, but is trying to MFA via a CLI tool (tsh, tctl etc.)
-	if enableBrowserMFA && groupedDevs.Browser != nil && browserMFATSHRedirectURL != "" {
+	// If the user has a WebAuthn device, return a Browser MFA challenge. This
+	// challenge is useful in cases where a user only has a browser-associated
+	// WebAuthn device, but is trying to MFA via a CLI tool (tsh, tctl etc.)
+	if enableBrowserMFA && groupedDevs.Browser != nil && clientRedirectURL != "" {
 		if challenge.BrowserMFAChallenge, err = a.BeginBrowserMFAChallenge(
 			ctx,
 			mfatypes.BeginBrowserMFAChallengeParams{
 				User:                     user,
-				BrowserMFATSHRedirectURL: browserMFATSHRedirectURL,
+				BrowserMFATSHRedirectURL: clientRedirectURL,
 				ProxyAddress:             proxyAddress,
 				Ext:                      challengeExtensions,
 			},
