@@ -22,6 +22,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/gravitational/trace"
 	"github.com/julienschmidt/httprouter"
 
@@ -99,7 +100,7 @@ func (h *Handler) createAccessRequest(w http.ResponseWriter, r *http.Request, pa
 		return nil, trace.Wrap(err)
 	}
 
-	accessReq, err := types.NewAccessRequest("", ctx.GetUser(), req.Roles...)
+	accessReq, err := types.NewAccessRequest(uuid.New().String(), ctx.GetUser(), req.Roles...)
 	if err != nil {
 		return nil, trace.Wrap(err)
 	}
