@@ -16,9 +16,7 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-import React from 'react';
-
-import { Box, Card, Flex, H2, Subtitle2, Text } from 'design';
+import { Box, Card, Flex, H2, Subtitle2 } from 'design';
 
 import {
   FeatureBox,
@@ -27,62 +25,13 @@ import {
 } from 'teleport/components/Layout';
 import cfg from 'teleport/config';
 
+import { AccessRequestsPage } from '../AccessRequestsPage';
+
 export function LockedAccessRequests() {
   if (cfg.entitlements.AccessRequests?.enabled) {
-    return <AccessRequestsInfo />;
+    return <AccessRequestsPage />;
   }
 
-  return <AccessRequestsLocked />;
-}
-
-function AccessRequestsInfo() {
-  return (
-    <FeatureBox>
-      <FeatureHeader alignItems="center" justifyContent="space-between">
-        <FeatureHeaderTitle>Access Requests</FeatureHeaderTitle>
-      </FeatureHeader>
-      <Card p={4}>
-        <H2 mb={3}>Access Requests are enabled</H2>
-        <Subtitle2 mb={4} color="text.slightlyMuted">
-          Use the CLI to create, review, and manage access requests.
-        </Subtitle2>
-        <Box
-          p={3}
-          css={`
-            background: ${(p: any) => p.theme.colors.spotBackground[0]};
-            border-radius: 8px;
-            font-family: monospace;
-          `}
-        >
-          <Text mb={2}>
-            <strong># Create an access request</strong>
-          </Text>
-          <Text mb={3} ml={2}>
-            tsh request create --roles=ROLE_NAME --reason="your reason"
-          </Text>
-          <Text mb={2}>
-            <strong># List pending requests</strong>
-          </Text>
-          <Text mb={3} ml={2}>
-            tsh request ls
-          </Text>
-          <Text mb={2}>
-            <strong># Approve a request</strong>
-          </Text>
-          <Text mb={3} ml={2}>
-            tsh request review --approve REQUEST_ID
-          </Text>
-          <Text mb={2}>
-            <strong># Deny a request</strong>
-          </Text>
-          <Text ml={2}>tsh request review --deny REQUEST_ID</Text>
-        </Box>
-      </Card>
-    </FeatureBox>
-  );
-}
-
-function AccessRequestsLocked() {
   return (
     <FeatureBox>
       <FeatureHeader alignItems="center" justifyContent="space-between">

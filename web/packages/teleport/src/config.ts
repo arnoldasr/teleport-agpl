@@ -491,7 +491,8 @@ const cfg = {
     userClusterPreferencesPath: '/v1/webapi/user/preferences/:clusterId',
 
     // Assist needs some access request info to exist in OSS
-    accessRequestPath: '/v1/enterprise/accessrequest/:requestId?',
+    accessRequestPath: '/v1/webapi/accessrequest/:requestId?',
+    accessRequestRolesPath: '/v1/webapi/accessrequest/roles',
 
     accessGraphFeatures: '/v1/enterprise/accessgraph/static/features.json',
 

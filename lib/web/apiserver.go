@@ -967,6 +967,14 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.PUT("/webapi/oidc/:name", h.WithAuth(h.updateOIDCConnectorHandle))
 	h.DELETE("/webapi/oidc/:name", h.WithAuth(h.deleteOIDCConnectorHandle))
 
+	// Access request endpoints
+	h.GET("/v1/webapi/accessrequest", h.WithAuth(h.getAccessRequests))
+	h.POST("/v1/webapi/accessrequest", h.WithAuth(h.createAccessRequest))
+	h.PUT("/v1/webapi/accessrequest/:id/approve", h.WithAuth(h.approveAccessRequest))
+	h.PUT("/v1/webapi/accessrequest/:id/deny", h.WithAuth(h.denyAccessRequest))
+	h.DELETE("/v1/webapi/accessrequest/:id", h.WithAuth(h.deleteAccessRequest))
+	h.GET("/v1/webapi/accessrequest/roles", h.WithAuth(h.getRequestableRoles))
+
 	// MFA public endpoints.
 	h.POST("/webapi/sites/:site/mfa/required", h.WithClusterAuth(h.isMFARequired))
 	h.POST("/webapi/mfa/login/begin", h.WithLimiter(h.mfaLoginBegin))

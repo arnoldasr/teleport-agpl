@@ -123,7 +123,7 @@ export function SSOConnectorInfo({ isNew = false }) {
   const [initialContent, setInitialContent] = useState(template);
 
   const [fetchAttempt, fetchConnector] = useAsync(async () => {
-    if (!isNew && connectorType === 'oidc') {
+    if (!isNew && connectorName && connectorType === 'oidc') {
       const res = await ctx.resourceService.fetchOIDCConnector(connectorName);
       setContent(res.content);
       setInitialContent(res.content);
@@ -159,7 +159,7 @@ export function SSOConnectorInfo({ isNew = false }) {
 
   const typeName = connectorType?.toUpperCase() || 'SSO';
   const title = isNew
-    ? `Creating new ${typeName} Auth Connector:`
+    ? `Creating New ${typeName} Connector`
     : `Editing ${typeName} Connector: ${connectorName}`;
 
   return (
