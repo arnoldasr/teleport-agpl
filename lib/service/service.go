@@ -2452,6 +2452,9 @@ func (process *TeleportProcess) initAuthService() error {
 	}
 	authServer.EncryptedIO = encryptedIO
 
+	// Register OIDC service for AGPL build.
+	authServer.SetOIDCService(auth.NewAGPLOIDCService(authServer))
+
 	lockWatcher, err := services.NewLockWatcher(process.ExitContext(), services.LockWatcherConfig{
 		ResourceWatcherConfig: services.ResourceWatcherConfig{
 			Component: teleport.ComponentAuth,
