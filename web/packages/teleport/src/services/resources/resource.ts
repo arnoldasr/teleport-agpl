@@ -260,6 +260,28 @@ class ResourceService {
   deleteGithubConnector(name: string) {
     return api.delete(cfg.getGithubConnectorsUrl(name));
   }
+
+  fetchOIDCConnector(name: string) {
+    return api
+      .get(cfg.getOIDCConnectorUrl(name))
+      .then(res => makeResource<'oidc'>(res));
+  }
+
+  createOIDCConnector(content: string) {
+    return api
+      .post(cfg.getOIDCConnectorsUrl(), { content })
+      .then(res => makeResource<'oidc'>(res));
+  }
+
+  updateOIDCConnector(name: string, content: string) {
+    return api
+      .put(cfg.getOIDCConnectorsUrl(name), { content })
+      .then(res => makeResource<'oidc'>(res));
+  }
+
+  deleteOIDCConnector(name: string) {
+    return api.delete(cfg.getOIDCConnectorsUrl(name));
+  }
 }
 
 export default ResourceService;

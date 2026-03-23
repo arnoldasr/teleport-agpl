@@ -960,6 +960,13 @@ func (h *Handler) bindDefaultEndpoints() {
 	h.GET("/v1/webapi/oidc/callback", h.WithMetaRedirect(h.oidcCallback))
 	h.POST("/v1/webapi/oidc/login/console", h.WithLimiter(h.oidcLoginConsole))
 
+	// OIDC connector CRUD endpoints
+	h.GET("/webapi/oidc", h.WithAuth(h.getOIDCConnectorsHandle))
+	h.POST("/webapi/oidc", h.WithAuth(h.createOIDCConnectorHandle))
+	h.GET("/webapi/oidc/connector/:name", h.WithAuth(h.getOIDCConnectorHandle))
+	h.PUT("/webapi/oidc/:name", h.WithAuth(h.updateOIDCConnectorHandle))
+	h.DELETE("/webapi/oidc/:name", h.WithAuth(h.deleteOIDCConnectorHandle))
+
 	// MFA public endpoints.
 	h.POST("/webapi/sites/:site/mfa/required", h.WithClusterAuth(h.isMFARequired))
 	h.POST("/webapi/mfa/login/begin", h.WithLimiter(h.mfaLoginBegin))

@@ -182,7 +182,7 @@ export function AuthConnectors() {
     <FeatureBox>
       <ResponsiveFeatureHeader>
         <FeatureHeaderTitle>Auth Connectors</FeatureHeaderTitle>
-        <InfoGuideButton config={{ guide: <InfoGuide isGitHub={true} /> }}>
+        <Flex gap={2}>
           <ResponsiveAddButton
             fill="border"
             onClick={() =>
@@ -191,7 +191,15 @@ export function AuthConnectors() {
           >
             New GitHub Connector
           </ResponsiveAddButton>
-        </InfoGuideButton>
+          <ResponsiveAddButton
+            fill="border"
+            onClick={() =>
+              history.push(cfg.getCreateAuthConnectorRoute('oidc'))
+            }
+          >
+            New OIDC Connector
+          </ResponsiveAddButton>
+        </Flex>
       </ResponsiveFeatureHeader>
       {fetchAttempt.status === 'error' && (
         <Alert>{fetchAttempt.statusText}</Alert>

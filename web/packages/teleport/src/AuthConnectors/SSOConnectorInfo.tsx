@@ -16,75 +16,119 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+import { useCallback, useEffect, useState } from 'react';
 import { useHistory, useParams } from 'react-router';
 
-import { Box, ButtonSecondary, Card, Flex, Text } from 'design';
-import { H2, Subtitle2 } from 'design/Text';
+import { useAsync } from 'shared/hooks/useAsync';
 
-import {
-  FeatureBox,
-  FeatureHeader,
-  FeatureHeaderTitle,
-} from 'teleport/components/Layout';
 import cfg from 'teleport/config';
+import useTeleport from 'teleport/useTeleport';
 
-export function SSOConnectorInfo() {
+import { AuthConnectorEditorContent } from './AuthConnectorEditor';
+
+const oidcTemplate = `kind: oidc
+version: v3
+metadata:
+  name: connector-name
+spec:
+  issuer_url: https://accounts.google.com
+  client_id: ""
+  client_secret: ""
+  redirect_url:
+    - https://teleport.example.com/v1/webapi/oidc/callback
+  claims_to_roles:
+    - claim: email
+      value: "*@example.com"
+      roles:
+        - access
+  scope:
+    - openid
+    - email
+    - profile
+`;
+
+const samlTemplate = `kind: saml
+version: v2
+metadata:
+  name: connector-name
+spec:
+  display: "SAML"
+  acs: https://teleport.example.com/v1/webapi/saml/acs
+  entity_descriptor_url: ""
+  attributes_to_roles:
+    - name: groups
+      value: "*"
+      roles:
+        - access
+`;
+
+/**
+ * SSOConnectorInfo is the editor for OIDC and SAML connectors.
+ */
+export function SSOConnectorInfo({ isNew = false }) {
   const { connectorType, connectorName } = useParams<{
     connectorType: string;
     connectorName: string;
   }>();
+  const ctx = useTeleport();
   const history = useHistory();
+
+  const template = connectorType === 'saml' ? samlTemplate : oidcTemplate;
+  const [content, setContent] = useState(template);
+  const [initialContent, setInitialContent] = useState(template);
+
+  const [fetchAttempt, fetchConnector] = useAsync(async () => {
+    if (!isNew && connectorType === 'oidc') {
+      const res = await ctx.resourceService.fetchOIDCConnector(connectorName);
+      setContent(res.content);
+      setInitialContent(res.content);
+    }
+    return;
+  });
+
+  const [saveAttempt, saveConnector] = useAsync(
+    useCallback(async () => {
+      if (connectorType === 'oidc') {
+        if (isNew) {
+          await ctx.resourceService
+            .createOIDCConnector(content)
+            .then(() => history.push(cfg.routes.sso));
+        } else {
+          await ctx.resourceService
+            .updateOIDCConnector(connectorName, content)
+            .then(() => history.push(cfg.routes.sso));
+        }
+      }
+    }, [connectorName, connectorType, content, isNew, history, ctx.resourceService])
+  );
+
+  const isSaveDisabled =
+    saveAttempt.status === 'processing' || content === initialContent;
+
+  useEffect(() => {
+    if (fetchAttempt.status !== 'success') {
+      fetchConnector();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const typeName = connectorType?.toUpperCase() || 'SSO';
+  const title = isNew
+    ? `Creating new ${typeName} Auth Connector:`
+    : `Editing ${typeName} Connector: ${connectorName}`;
 
   return (
-    <FeatureBox>
-      <FeatureHeader alignItems="center" justifyContent="space-between">
-        <FeatureHeaderTitle>
-          {typeName} Connector: {connectorName}
-        </FeatureHeaderTitle>
-        <ButtonSecondary size="medium" onClick={() => history.push(cfg.routes.sso)}>
-          Back
-        </ButtonSecondary>
-      </FeatureHeader>
-      <Card p={4}>
-        <H2 mb={3}>{connectorName}</H2>
-        <Subtitle2 mb={4} color="text.slightlyMuted">
-          Manage this {typeName} connector using the CLI.
-        </Subtitle2>
-        <Box
-          p={3}
-          css={`
-            background: ${(p: any) => p.theme.colors.spotBackground[0]};
-            border-radius: 8px;
-            font-family: monospace;
-          `}
-        >
-          <Text mb={2}>
-            <strong># View connector configuration</strong>
-          </Text>
-          <Text mb={3} ml={2}>
-            tctl get {connectorType}/{connectorName}
-          </Text>
-          <Text mb={2}>
-            <strong># Edit connector (export, modify, apply)</strong>
-          </Text>
-          <Text mb={3} ml={2}>
-            tctl get {connectorType}/{connectorName} {'>'} connector.yaml
-          </Text>
-          <Text mb={3} ml={2}>
-            # edit connector.yaml
-          </Text>
-          <Text mb={3} ml={2}>
-            tctl create -f connector.yaml
-          </Text>
-          <Text mb={2}>
-            <strong># Delete connector</strong>
-          </Text>
-          <Text ml={2}>
-            tctl rm {connectorType}/{connectorName}
-          </Text>
-        </Box>
-      </Card>
-    </FeatureBox>
+    <AuthConnectorEditorContent
+      title={title}
+      content={content}
+      backButtonRoute={cfg.routes.sso}
+      isSaveDisabled={isSaveDisabled}
+      saveAttempt={saveAttempt}
+      fetchAttempt={fetchAttempt}
+      onSave={saveConnector}
+      onCancel={() => history.push(cfg.routes.sso)}
+      setContent={setContent}
+      isGithub={false}
+    />
   );
 }

@@ -340,6 +340,76 @@ func (h *Handler) createGithubConnectorHandle(w http.ResponseWriter, r *http.Req
 	return item, trace.Wrap(err)
 }
 
+func (h *Handler) getOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	connector, err := clt.GetOIDCConnector(r.Context(), params.ByName("name"), false)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return ui.NewResourceItem(connector)
+}
+
+func (h *Handler) getOIDCConnectorsHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	connectors, err := clt.GetOIDCConnectors(r.Context(), false)
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	var items []ui.ResourceItem
+	for _, c := range connectors {
+		item, err := ui.NewResourceItem(c)
+		if err != nil {
+			return nil, trace.Wrap(err)
+		}
+		items = append(items, *item)
+	}
+
+	return items, nil
+}
+
+func (h *Handler) createOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	item, err := CreateResource(r, types.KindOIDCConnector, services.UnmarshalOIDCConnector, clt.CreateOIDCConnector)
+	return item, trace.Wrap(err)
+}
+
+func (h *Handler) updateOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	item, err := UpdateResource[types.OIDCConnector](r, params, types.KindOIDCConnector, services.UnmarshalOIDCConnector, clt.UpdateOIDCConnector)
+	return item, trace.Wrap(err)
+}
+
+func (h *Handler) deleteOIDCConnectorHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
+	clt, err := ctx.GetClient()
+	if err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	if err := clt.DeleteOIDCConnector(r.Context(), params.ByName("name")); err != nil {
+		return nil, trace.Wrap(err)
+	}
+
+	return OK(), nil
+}
+
 func (h *Handler) getTrustedClustersHandle(w http.ResponseWriter, r *http.Request, params httprouter.Params, ctx *SessionContext) (interface{}, error) {
 	clt, err := ctx.GetClient()
 	if err != nil {
