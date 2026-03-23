@@ -36,7 +36,11 @@ import { FeatureBox, FeatureHeaderTitle } from 'teleport/components/Layout';
 import { Route, Switch } from 'teleport/components/Router';
 import useResources from 'teleport/components/useResources';
 import cfg from 'teleport/config';
-import { DefaultAuthConnector, Resource } from 'teleport/services/resources';
+import {
+  DefaultAuthConnector,
+  KindAuthConnectors,
+  Resource,
+} from 'teleport/services/resources';
 import useTeleport from 'teleport/useTeleport';
 
 import { GitHubConnectorEditor } from './AuthConnectorEditor';
@@ -80,14 +84,36 @@ export function AuthConnectorsContainer() {
  */
 export function AuthConnectors() {
   const ctx = useTeleport();
-  const [items, setItems] = useState<Resource<'github'>[]>([]);
+  const [items, setItems] = useState<Resource<KindAuthConnectors>[]>([]);
   const [defaultConnector, setDefaultConnector] =
     useState<DefaultAuthConnector>();
 
   const [fetchAttempt, fetchConnectors] = useAsync(
     useCallback(async () => {
       return await ctx.resourceService.fetchGithubConnectors().then(res => {
-        setItems(res.connectors);
+        // Start with GitHub connectors from the API
+        const allConnectors: Resource<KindAuthConnectors>[] = [
+          ...res.connectors,
+        ];
+
+        // Add OIDC/SAML connectors from auth providers config
+        const providers = cfg.auth?.providers || [];
+        for (const provider of providers) {
+          if (
+            (provider.type === 'oidc' || provider.type === 'saml') &&
+            !allConnectors.some(c => c.name === provider.name)
+          ) {
+            allConnectors.push({
+              id: `${provider.type}-${provider.name}`,
+              kind: provider.type as 'oidc' | 'saml',
+              name: provider.name,
+              description: `${provider.type.toUpperCase()} connector`,
+              content: '',
+            });
+          }
+        }
+
+        setItems(allConnectors);
         setDefaultConnector(res.defaultConnector);
       });
     }, [ctx.resourceService])
@@ -190,7 +216,7 @@ export function AuthConnectors() {
                 />
               )}
             </Box>
-            <CtaConnectors />
+            {ctx.lockedFeatures.authConnectors && <CtaConnectors />}
           </Flex>
         </Flex>
       )}
