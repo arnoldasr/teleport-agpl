@@ -69,6 +69,7 @@ export function AccessRequestsPage() {
   } | null>(null);
   const [reviewReason, setReviewReason] = useState('');
   const [error, setError] = useState('');
+  const [assumingRequest, setAssumingRequest] = useState('');
 
   const [fetchAttempt, fetchRequests] = useAsync(
     useCallback(async () => {
@@ -85,6 +86,21 @@ export function AccessRequestsPage() {
     setReviewReason('');
     await fetchRequests();
   });
+
+  async function assumeRequest(requestId: string) {
+    setAssumingRequest(requestId);
+    setError('');
+    try {
+      await api.post(cfg.api.webRenewTokenPath, {
+        requestId,
+      });
+      // Reload the page to pick up the new session with elevated roles
+      window.location.reload();
+    } catch (err: any) {
+      setError(err.message || 'Failed to assume access request');
+      setAssumingRequest('');
+    }
+  }
 
   useEffect(() => {
     fetchRequests();
@@ -230,9 +246,25 @@ export function AccessRequestsPage() {
                         req.user === currentUser && (
                           <Text color="text.muted">Awaiting review</Text>
                         )}
-                      {req.state !== 'PENDING' && (
+                      {req.state === 'APPROVED' &&
+                        req.user === currentUser && (
+                          <ButtonPrimary
+                            size="small"
+                            disabled={assumingRequest === req.id}
+                            onClick={() => assumeRequest(req.id)}
+                          >
+                            {assumingRequest === req.id
+                              ? 'Assuming...'
+                              : 'Assume Roles'}
+                          </ButtonPrimary>
+                        )}
+                      {req.state === 'APPROVED' &&
+                        req.user !== currentUser && (
+                          <Text color="success.main">Approved</Text>
+                        )}
+                      {req.state === 'DENIED' && (
                         <Text color="text.muted">
-                          {req.resolveReason || '-'}
+                          {req.resolveReason || 'Denied'}
                         </Text>
                       )}
                     </Cell>
