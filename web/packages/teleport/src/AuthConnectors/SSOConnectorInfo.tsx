@@ -36,15 +36,60 @@ spec:
   client_secret: ""
   redirect_url:
     - https://teleport.example.com/v1/webapi/oidc/callback
-  claims_to_roles:
-    - claim: email
-      value: "*@example.com"
-      roles:
-        - access
   scope:
     - openid
     - email
     - profile
+
+  # Claims-to-roles mapping: maps OIDC claims to Teleport roles.
+  # Rules are evaluated in order. All matching rules apply (union of roles).
+  #
+  # Examples:
+  #
+  # Admins - specific emails get full access
+  # - claim: email
+  #   value: "admin@example.com"
+  #   roles: ["access", "editor", "auditor"]
+  #
+  # Devs - match multiple users by email
+  # - claim: email
+  #   value: "dev1@example.com"
+  #   roles: ["access", "editor"]
+  # - claim: email
+  #   value: "dev2@example.com"
+  #   roles: ["access", "editor"]
+  #
+  # Domain match - everyone from a subdomain
+  # - claim: email
+  #   value: "*@dev.example.com"
+  #   roles: ["access", "editor"]
+  #
+  # Catch-all - default role for anyone who authenticates
+  # - claim: email
+  #   value: "*"
+  #   roles: ["access"]
+
+  claims_to_roles:
+    # Admins
+    - claim: email
+      value: "admin@example.com"
+      roles:
+        - access
+        - editor
+        - auditor
+
+    # Developers
+    - claim: email
+      value: "dev@example.com"
+      roles:
+        - access
+        - editor
+
+    # Default - everyone else gets basic access
+    - claim: email
+      value: "*"
+      roles:
+        - access
 `;
 
 const samlTemplate = `kind: saml
