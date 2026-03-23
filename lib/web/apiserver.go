@@ -2216,9 +2216,9 @@ func setEntitlementsWithLegacyLogic(webCfg *webclient.WebConfig, clusterFeatures
 		webCfg.Entitlements[string(entitlements.Identity)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetIdentityGovernance()}
 		webCfg.Entitlements[string(entitlements.JoinActiveSessions)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetJoinActiveSessions()}
 		webCfg.Entitlements[string(entitlements.MobileDeviceManagement)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetMobileDeviceManagement()}
-		webCfg.Entitlements[string(entitlements.OIDC)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetOIDC()}
+		webCfg.Entitlements[string(entitlements.OIDC)] = webclient.EntitlementInfo{Enabled: true}
 		webCfg.Entitlements[string(entitlements.Policy)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetPolicy() != nil && clusterFeatures.GetPolicy().Enabled}
-		webCfg.Entitlements[string(entitlements.SAML)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetSAML()}
+		webCfg.Entitlements[string(entitlements.SAML)] = webclient.EntitlementInfo{Enabled: true}
 		// set default Identity fields to legacy feature value
 		webCfg.Entitlements[string(entitlements.AccessLists)] = webclient.EntitlementInfo{Enabled: true, Limit: clusterFeatures.GetAccessList().GetCreateLimit()}
 		webCfg.Entitlements[string(entitlements.AccessMonitoring)] = webclient.EntitlementInfo{Enabled: clusterFeatures.GetAccessMonitoring().GetEnabled(), Limit: clusterFeatures.GetAccessMonitoring().GetMaxReportRangeLimit()}
@@ -2243,8 +2243,8 @@ func setEntitlementsWithLegacyLogic(webCfg *webclient.WebConfig, clusterFeatures
 		webCfg.IsPolicyEnabled = clusterFeatures.GetPolicy() != nil && clusterFeatures.GetPolicy().Enabled
 		webCfg.JoinActiveSessions = clusterFeatures.GetJoinActiveSessions()
 		webCfg.MobileDeviceManagement = clusterFeatures.GetMobileDeviceManagement()
-		webCfg.OIDC = clusterFeatures.GetOIDC()
-		webCfg.SAML = clusterFeatures.GetSAML()
+		webCfg.OIDC = true
+		webCfg.SAML = true
 		webCfg.TrustedDevices = clusterFeatures.GetDeviceTrust().GetEnabled()
 		webCfg.FeatureLimits = webclient.FeatureLimits{
 			AccessListCreateLimit:               int(clusterFeatures.GetAccessList().GetCreateLimit()),
