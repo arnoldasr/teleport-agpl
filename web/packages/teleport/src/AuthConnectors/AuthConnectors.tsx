@@ -17,7 +17,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useHistory } from 'react-router';
+import { useHistory, useParams } from 'react-router';
 
 import { Alert, Box, Flex, Indicator } from 'design';
 import { H2 } from 'design/Text/Text';
@@ -48,6 +48,7 @@ import { ConnectorList } from './ConnectorList';
 import { CtaConnectors } from './ConnectorList/CTAConnectors';
 import DeleteConnectorDialog from './DeleteConnectorDialog';
 import EmptyList from './EmptyList';
+import { SSOConnectorInfo } from './SSOConnectorInfo';
 import templates from './templates';
 
 export const description =
@@ -62,12 +63,12 @@ export function AuthConnectorsContainer() {
       <Route
         key="auth-connector-edit"
         path={cfg.routes.ssoConnector.edit}
-        render={() => <GitHubConnectorEditor />}
+        render={() => <ConnectorEditorRouter />}
       />
       <Route
         key="auth-connector-new"
         path={cfg.routes.ssoConnector.create}
-        render={() => <GitHubConnectorEditor isNew={true} />}
+        render={() => <ConnectorEditorRouter isNew />}
       />
       <Route
         key="auth-connector-list"
@@ -77,6 +78,17 @@ export function AuthConnectorsContainer() {
       />
     </Switch>
   );
+}
+
+/**
+ * ConnectorEditorRouter routes to the correct editor based on connector type.
+ */
+function ConnectorEditorRouter({ isNew = false }) {
+  const { connectorType } = useParams<{ connectorType: string }>();
+  if (connectorType === 'oidc' || connectorType === 'saml') {
+    return <SSOConnectorInfo />;
+  }
+  return <GitHubConnectorEditor isNew={isNew} />;
 }
 
 /**
