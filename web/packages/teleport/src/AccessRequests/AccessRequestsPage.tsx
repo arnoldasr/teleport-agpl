@@ -61,7 +61,6 @@ type AccessRequest = {
 export function AccessRequestsPage() {
   const teleCtx = useTeleport();
   const currentUser = teleCtx.storeUser.getUsername();
-  const canReview = teleCtx.storeUser.state?.acl?.accessRequests?.list || false;
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{
@@ -201,7 +200,6 @@ export function AccessRequestsPage() {
                   render: (req) => (
                     <Cell>
                       {req.state === 'PENDING' &&
-                        canReview &&
                         req.user !== currentUser && (
                           <Flex gap={1}>
                             <ButtonPrimary
