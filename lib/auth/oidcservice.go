@@ -339,6 +339,15 @@ func (s *AGPLOIDCService) validateOIDCAuthCallback(ctx context.Context, diagCtx 
 		return nil, trace.Wrap(err)
 	}
 
+	oidcReq := authclient.OIDCAuthRequest{
+		ConnectorID:       req.ConnectorID,
+		CSRFToken:         req.CSRFToken,
+		CreateWebSession:  req.CreateWebSession,
+		ClientRedirectURL: req.ClientRedirectURL,
+		SSHPubKey:         req.SshPublicKey,
+		TLSPubKey:         req.TlsPublicKey,
+	}
+
 	// For test flow, skip session creation
 	if req.SSOTestFlow {
 		diagCtx.Info.Success = true
@@ -349,11 +358,12 @@ func (s *AGPLOIDCService) validateOIDCAuthCallback(ctx context.Context, diagCtx 
 				UserID:      userID,
 			},
 			Username: username,
+			Req:      oidcReq,
 		}, nil
 	}
 
 	// Build the auth response with session and certificates
-	return s.makeOIDCAuthResponse(ctx, req, userState, connector.GetName(), username, userID, sessionTTL, logger)
+	return s.makeOIDCAuthResponse(ctx, req, userState, connector.GetName(), username, userID, sessionTTL, oidcReq, logger)
 }
 
 func (s *AGPLOIDCService) makeOIDCAuthResponse(
@@ -362,6 +372,7 @@ func (s *AGPLOIDCService) makeOIDCAuthResponse(
 	userState services.UserState,
 	connectorName, username, userID string,
 	sessionTTL time.Duration,
+	oidcReq authclient.OIDCAuthRequest,
 	logger *slog.Logger,
 ) (*authclient.OIDCAuthResponse, error) {
 	auth := authclient.OIDCAuthResponse{
@@ -371,6 +382,7 @@ func (s *AGPLOIDCService) makeOIDCAuthResponse(
 			UserID:      userID,
 		},
 		Username: userState.GetName(),
+		Req:      oidcReq,
 	}
 
 	if req.CreateWebSession {
