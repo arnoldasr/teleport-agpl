@@ -353,7 +353,10 @@ function CreateRequestDialog({
       </DialogHeader>
       <DialogContent minWidth="450px">
         {fetchAttempt.status === 'processing' && <Indicator />}
-        {fetchAttempt.status === 'success' && (
+        {fetchAttempt.status === 'error' && (
+          <Alert mb={3}>{fetchAttempt.statusText}</Alert>
+        )}
+        {(fetchAttempt.status === 'success' || fetchAttempt.status === 'error') && (
           <>
             <Text mb={2} bold>
               Select Roles:

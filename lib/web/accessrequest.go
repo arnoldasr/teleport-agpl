@@ -26,6 +26,7 @@ import (
 	"github.com/gravitational/trace"
 	"github.com/julienschmidt/httprouter"
 
+	proto "github.com/gravitational/teleport/api/client/proto"
 	"github.com/gravitational/teleport/api/types"
 	"github.com/gravitational/teleport/lib/httplib"
 )
@@ -195,15 +196,23 @@ func (h *Handler) getRequestableRoles(w http.ResponseWriter, r *http.Request, pa
 		return nil, trace.Wrap(err)
 	}
 
-	roles, err := clt.GetRoles(r.Context())
+	resp, err := clt.ListRequestableRoles(r.Context(), &proto.ListRequestableRolesRequest{})
 	if err != nil {
-		return nil, trace.Wrap(err)
+		// Fallback: try listing all roles if the user has permission
+		roles, err2 := clt.GetRoles(r.Context())
+		if err2 != nil {
+			return nil, trace.Wrap(err)
+		}
+		var roleNames []string
+		for _, role := range roles {
+			roleNames = append(roleNames, role.GetName())
+		}
+		return requestableRolesResponse{Roles: roleNames}, nil
 	}
 
 	var roleNames []string
-	for _, role := range roles {
-		roleNames = append(roleNames, role.GetName())
+	for _, role := range resp.Roles {
+		roleNames = append(roleNames, role.Name)
 	}
-
 	return requestableRolesResponse{Roles: roleNames}, nil
 }
