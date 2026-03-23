@@ -4925,8 +4925,6 @@ func (a *ServerWithRoles) UpsertRole(ctx context.Context, role types.Role) (type
 func checkRoleFeatureSupport(role types.Role) error {
 	features := modules.GetModules().Features()
 	options := role.GetOptions()
-	allowReq, allowRev := role.GetAccessRequestConditions(types.Allow), role.GetAccessReviewConditions(types.Allow)
-
 	// source IP pinning doesn't have a dedicated feature flag,
 	// it is available to all enterprise users
 	if modules.GetModules().BuildType() != modules.BuildEnterprise && role.GetOptions().PinSourceIP {
@@ -4937,19 +4935,6 @@ func checkRoleFeatureSupport(role types.Role) error {
 	case !features.AccessControls && options.MaxSessions > 0:
 		return trace.AccessDenied(
 			"role option max_sessions is only available in enterprise subscriptions")
-	case !features.AdvancedAccessWorkflows &&
-		(options.RequestAccess == types.RequestStrategyReason || options.RequestAccess == types.RequestStrategyAlways):
-		return trace.AccessDenied(
-			"role option request_access: %v is only available in enterprise subscriptions", options.RequestAccess)
-	case !features.AdvancedAccessWorkflows && len(allowReq.Thresholds) != 0:
-		return trace.AccessDenied(
-			"role field allow.request.thresholds is only available in enterprise subscriptions")
-	case !features.AdvancedAccessWorkflows && !allowRev.IsZero():
-		return trace.AccessDenied(
-			"role field allow.review_requests is only available in enterprise subscriptions")
-	case modules.GetModules().BuildType() != modules.BuildEnterprise && len(allowReq.SearchAsRoles) != 0:
-		return trace.AccessDenied(
-			"role field allow.search_as_roles is only available in enterprise subscriptions")
 	default:
 		return nil
 	}

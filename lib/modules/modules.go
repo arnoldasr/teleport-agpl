@@ -414,14 +414,16 @@ func (p *defaultModules) Features() Features {
 	})
 
 	return Features{
-		AutomaticUpgrades: p.automaticUpgrades,
-		SupportType:       proto.SupportType_SUPPORT_TYPE_FREE,
+		AutomaticUpgrades:       p.automaticUpgrades,
+		AdvancedAccessWorkflows: true,
+		SupportType:             proto.SupportType_SUPPORT_TYPE_FREE,
 		Entitlements: map[entitlements.EntitlementKind]EntitlementInfo{
 			entitlements.App:                {Enabled: true, Limit: 0},
 			entitlements.DB:                 {Enabled: true, Limit: 0},
 			entitlements.Desktop:            {Enabled: true, Limit: 0},
 			entitlements.JoinActiveSessions: {Enabled: true, Limit: 0},
 			entitlements.K8s:                {Enabled: true, Limit: 0},
+			entitlements.AccessRequests:     {Enabled: true, Limit: 0},
 		},
 	}
 }
