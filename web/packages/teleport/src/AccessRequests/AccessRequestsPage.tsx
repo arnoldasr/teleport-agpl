@@ -45,6 +45,7 @@ import {
 } from 'teleport/components/Layout';
 import cfg from 'teleport/config';
 import api from 'teleport/services/api';
+import useTeleport from 'teleport/useTeleport';
 
 type AccessRequest = {
   id: string;
@@ -58,6 +59,9 @@ type AccessRequest = {
 };
 
 export function AccessRequestsPage() {
+  const teleCtx = useTeleport();
+  const currentUser = teleCtx.storeUser.getUsername();
+  const canReview = teleCtx.storeUser.state?.acl?.accessRequests?.list || false;
   const [requests, setRequests] = useState<AccessRequest[]>([]);
   const [showCreate, setShowCreate] = useState(false);
   const [reviewTarget, setReviewTarget] = useState<{
@@ -196,32 +200,38 @@ export function AccessRequestsPage() {
                   headerText: 'Actions',
                   render: (req) => (
                     <Cell>
-                      {req.state === 'PENDING' && (
-                        <Flex gap={1}>
-                          <ButtonPrimary
-                            size="small"
-                            onClick={() => {
-                              setReviewTarget({
-                                id: req.id,
-                                action: 'approve',
-                              });
-                            }}
-                          >
-                            Approve
-                          </ButtonPrimary>
-                          <ButtonWarning
-                            size="small"
-                            onClick={() => {
-                              setReviewTarget({
-                                id: req.id,
-                                action: 'deny',
-                              });
-                            }}
-                          >
-                            Deny
-                          </ButtonWarning>
-                        </Flex>
-                      )}
+                      {req.state === 'PENDING' &&
+                        canReview &&
+                        req.user !== currentUser && (
+                          <Flex gap={1}>
+                            <ButtonPrimary
+                              size="small"
+                              onClick={() => {
+                                setReviewTarget({
+                                  id: req.id,
+                                  action: 'approve',
+                                });
+                              }}
+                            >
+                              Approve
+                            </ButtonPrimary>
+                            <ButtonWarning
+                              size="small"
+                              onClick={() => {
+                                setReviewTarget({
+                                  id: req.id,
+                                  action: 'deny',
+                                });
+                              }}
+                            >
+                              Deny
+                            </ButtonWarning>
+                          </Flex>
+                        )}
+                      {req.state === 'PENDING' &&
+                        req.user === currentUser && (
+                          <Text color="text.muted">Awaiting review</Text>
+                        )}
                       {req.state !== 'PENDING' && (
                         <Text color="text.muted">
                           {req.resolveReason || '-'}
